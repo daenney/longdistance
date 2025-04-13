@@ -28,6 +28,10 @@ func (p *Processor) compactIRI(
 		return key, nil
 	}
 
+	if slices.Contains(p.excludeIRIsFromCompaction, key) {
+		return key, nil
+	}
+
 	// 2)
 	activeContext.initInverse()
 

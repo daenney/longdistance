@@ -17,14 +17,15 @@ type ProcessorOption func(*Processor)
 // Create one with [NewProcessor] and pass any [ProcessorOption] to configure
 // the processor.
 type Processor struct {
-	modeLD10          bool
-	ordered           bool
-	baseIRI           string
-	compactArrays     bool
-	compactToRelative bool
-	loader            RemoteContextLoaderFunc
-	logger            *slog.Logger
-	expandContext     json.RawMessage
+	modeLD10                  bool
+	ordered                   bool
+	baseIRI                   string
+	compactArrays             bool
+	compactToRelative         bool
+	loader                    RemoteContextLoaderFunc
+	logger                    *slog.Logger
+	expandContext             json.RawMessage
+	excludeIRIsFromCompaction []string
 }
 
 // NewProcessor creates a new JSON-LD processor.
@@ -115,5 +116,12 @@ func WithCompactToRelative(b bool) ProcessorOption {
 func WithExpandContext(ctx json.RawMessage) ProcessorOption {
 	return func(p *Processor) {
 		p.expandContext = ctx
+	}
+}
+
+// WithExcludeIRIsFromCompaction disables IRI compaction for the specified IRIs.
+func WithExcludeIRIsFromCompaction(iri ...string) ProcessorOption {
+	return func(p *Processor) {
+		p.excludeIRIsFromCompaction = iri
 	}
 }
