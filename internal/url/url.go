@@ -8,17 +8,15 @@ import (
 	"strings"
 )
 
-func Parse(raw string) (*url.URL, error) {
-	return url.Parse(raw)
-}
+var Parse = url.Parse
 
 func Relative(base string, iri string) (string, error) {
-	baseURL, err := url.Parse(base)
+	baseURL, err := Parse(base)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse base URL: %w", err)
 	}
 
-	absURL, err := url.Parse(iri)
+	absURL, err := Parse(iri)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse absolute URL: %w", err)
 	}
@@ -78,12 +76,12 @@ func EndsInGenDelim(s string) bool {
 }
 
 func IsRelative(s string) bool {
-	_, err := url.Parse(s)
+	_, err := Parse(s)
 	return err == nil
 }
 
 func IsIRI(s string) bool {
-	u, err := url.Parse(s)
+	u, err := Parse(s)
 	if err != nil {
 		return false
 	}
@@ -98,12 +96,12 @@ func IsIRI(s string) bool {
 }
 
 func Resolve(base string, val string) (string, error) {
-	r, err := url.Parse(val)
+	r, err := Parse(val)
 	if err != nil {
 		return "", err
 	}
 
-	u, err := url.Parse(base)
+	u, err := Parse(base)
 	if err != nil {
 		return "", err
 	}

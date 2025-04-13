@@ -18,7 +18,7 @@ const RemoteContextLimit = 10
 // Context represents a processed JSON-LD context.
 type Context struct {
 	defs            map[string]Term
-	protected       set
+	protected       map[string]struct{}
 	currentBaseIRI  string
 	originalBaseIRI string
 
@@ -34,7 +34,7 @@ type Context struct {
 func newContext(documentURL string) *Context {
 	return &Context{
 		defs:             make(map[string]Term),
-		protected:        make(set),
+		protected:        make(map[string]struct{}),
 		defaultLang:      Null[string]{},
 		defaultDirection: Null[string]{},
 		previousContext:  nil,

@@ -87,7 +87,7 @@ func (p *Processor) Expand(document json.RawMessage, url string) ([]Node, error)
 			continue
 		}
 
-		if obj.Has(KeywordID) && len(obj.props()) == 1 {
+		if obj.Has(KeywordID) && len(obj.PropertySet()) == 1 {
 			continue
 		}
 
@@ -428,13 +428,13 @@ func (p *Processor) expand(
 	}
 
 	// 18)
-	if result.Has(KeywordLanguage) && len(result.props()) == 1 {
+	if result.Has(KeywordLanguage) && len(result.PropertySet()) == 1 {
 		return nil, nil
 	}
 
 	// 19)
 	if activeProperty == "" || activeProperty == KeywordGraph {
-		props := result.props()
+		props := result.PropertySet()
 		if len(props) == 0 || result.Has(KeywordList) || result.Has(KeywordValue) {
 			return nil, nil
 		} else if len(props) == 1 && result.Has(KeywordID) {

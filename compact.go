@@ -259,7 +259,7 @@ func (p *Processor) compactIRI(
 					KeywordIndex+KeywordSet)
 			}
 			// 4.12)
-			if isObject && object.IsValue() && len(object.props()) == 1 {
+			if isObject && object.IsValue() && len(object.PropertySet()) == 1 {
 				containers = append(containers,
 					KeywordLanguage,
 					KeywordLanguage+KeywordSet)
@@ -427,7 +427,7 @@ func (p *Processor) compactValue(
 		direction = ctx.defaultDirection
 	}
 
-	allProps := value.props()
+	allProps := value.PropertySet()
 	allPropsLen := len(allProps)
 	def, defOK := ctx.defs[prop]
 
@@ -599,7 +599,7 @@ func (p *Processor) compact(
 
 	// 5)
 	if activeContext.previousContext != nil {
-		if !object.Has(KeywordValue) && (!object.Has(KeywordID) || len(object.props()) > 1) {
+		if !object.Has(KeywordValue) && (!object.Has(KeywordID) || len(object.PropertySet()) > 1) {
 			activeContext = activeContext.previousContext
 		}
 	}
@@ -683,7 +683,7 @@ func (p *Processor) compact(
 	}
 
 	// 12)
-	expandedProperties := slices.Collect(maps.Keys(object.props()))
+	expandedProperties := slices.Collect(maps.Keys(object.PropertySet()))
 	if ordered {
 		slices.Sort(expandedProperties)
 	}

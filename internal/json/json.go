@@ -9,25 +9,11 @@ type RawMessage = json.RawMessage
 type Object map[string]RawMessage
 type Array []RawMessage
 
-func Compact(dst *bytes.Buffer, src []byte) error {
-	return json.Compact(dst, src)
-}
-
-func Marshal(v any) ([]byte, error) {
-	return json.Marshal(v)
-}
-
-func MarshalIndent(v any, prefix string, indent string) ([]byte, error) {
-	return json.MarshalIndent(v, prefix, indent)
-}
-
-func Valid(data []byte) bool {
-	return json.Valid(data)
-}
-
-func Unmarshal(data []byte, v any) error {
-	return json.Unmarshal(data, v)
-}
+var Compact = json.Compact
+var Marshal = json.Marshal
+var MarshalIndent = json.MarshalIndent
+var Valid = json.Valid
+var Unmarshal = json.Unmarshal
 
 var (
 	beginArray  = byte('[')

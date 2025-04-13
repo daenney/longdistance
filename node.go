@@ -29,8 +29,35 @@ type Node struct {
 	Properties Properties // everything else
 }
 
-func (n *Node) props() set {
-	res := make(set, len(n.Properties)+2)
+// Internal is a generic type that matches the internals of [Node].
+//
+// This can be used to convert to a [Node] from any type outside this package
+// that happens to be a [Node] underneath.
+type Internal interface {
+	~struct {
+		Direction  string
+		Graph      []Node
+		ID         string
+		Included   []Node
+		Index      string
+		Language   string
+		List       []Node
+		Reverse    Properties
+		Set        []Node
+		Type       []string
+		Value      json.RawMessage
+		Properties Properties
+	}
+}
+
+// PropertySet returns a [Set] with an entry for each property that is set on
+// the [Node].
+func (n *Node) PropertySet() map[string]struct{} {
+	if n == nil {
+		return nil
+	}
+
+	res := make(map[string]struct{}, len(n.Properties)+2)
 	if n.Has(KeywordDirection) {
 		res[KeywordDirection] = struct{}{}
 	}
@@ -73,8 +100,8 @@ func (n *Node) props() set {
 	return res
 }
 
-func (n *Node) propsWithout(props ...string) set {
-	nprops := n.props()
+func (n *Node) propsWithout(props ...string) map[string]struct{} {
+	nprops := n.PropertySet()
 	for _, prop := range props {
 		delete(nprops, prop)
 	}
@@ -136,7 +163,7 @@ func (n *Node) IsZero() bool {
 		return true
 	}
 
-	return len(n.props()) == 0
+	return len(n.PropertySet()) == 0
 }
 
 // IsSubject checks if this node is a subject.
@@ -312,4 +339,31 @@ func (n *Node) MarshalJSON() ([]byte, error) {
 	return json.Marshal(result)
 }
 
-type set map[string]struct{}
+// GetNodes returns the nodes stored in property.
+func (n *Node) GetNodes(property string) []Node {
+	switch property {
+	case KeywordGraph:
+		return n.Graph
+	case KeywordIncluded:
+		return n.Included
+	case KeywordList:
+		return n.List
+	case KeywordSet:
+		return n.Set
+	default:
+		if !n.Has(property) {
+			return nil
+		}
+		return n.Properties[property]
+	}
+}
+
+// AddNodes appends the nodes stored in property.
+func (n *Node) AddNodes(property string, nodes ...Node) {
+	n.Properties[property] = append(n.Properties[property], nodes...)
+}
+
+// SetNodes overrides the nodes stored in property.
+func (n *Node) SetNodes(property string, nodes ...Node) {
+	n.Properties[property] = nodes
+}
