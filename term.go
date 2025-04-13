@@ -406,6 +406,9 @@ func (p *Processor) createTerm(
 			} else {
 				// 14.2.5)
 				if simpleTerm && url.EndsInGenDelim(u) || u == BlankNode {
+					if v, ok := p.remapPrefixIRIs[u]; ok {
+						termDef.IRI = Null[string]{Set: true, Value: v}
+					}
 					termDef.Prefix = true
 				}
 			}

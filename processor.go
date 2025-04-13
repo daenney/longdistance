@@ -26,6 +26,7 @@ type Processor struct {
 	logger                    *slog.Logger
 	expandContext             json.RawMessage
 	excludeIRIsFromCompaction []string
+	remapPrefixIRIs           map[string]string
 }
 
 // NewProcessor creates a new JSON-LD processor.
@@ -123,5 +124,19 @@ func WithExpandContext(ctx json.RawMessage) ProcessorOption {
 func WithExcludeIRIsFromCompaction(iri ...string) ProcessorOption {
 	return func(p *Processor) {
 		p.excludeIRIsFromCompaction = iri
+	}
+}
+
+// WithRemapPrefixIRIs can remap a prefix IRI during context processing.
+//
+// Prefixes are only remapped for an exact match.
+//
+// This is useful to remap the incorrect schema.org# to schema.org/.
+func WithRemapPrefixIRIs(old, new string) ProcessorOption {
+	return func(p *Processor) {
+		if p.remapPrefixIRIs == nil {
+			p.remapPrefixIRIs = make(map[string]string, 2)
+		}
+		p.remapPrefixIRIs[old] = new
 	}
 }
