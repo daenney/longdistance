@@ -2,15 +2,50 @@ package longdistance_test
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	ld "code.dny.dev/longdistance"
 	"code.dny.dev/longdistance/internal/json"
+	"code.dny.dev/longdistance/internal/url"
 	"github.com/google/go-cmp/cmp"
 )
 
 var dump = flag.Bool("dump", false, "dump the compacted or expanded JSON on test failure")
+
+func FileLoader(t *testing.T) ld.RemoteContextLoaderFunc {
+	t.Helper()
+
+	return func(_ context.Context, s string) (ld.Document, error) {
+		u, err := url.Parse(s)
+		if err != nil {
+			return ld.Document{}, err
+		}
+
+		if u.Scheme != "http" && u.Scheme != "https" {
+			return ld.Document{}, ld.ErrLoadingRemoteContext
+		}
+
+		data := LoadData(t, filepath.Join(
+			filepath.Join("testdata", "w3c"),
+			filepath.Join(strings.Split(u.Path, "/")[3:]...),
+		))
+
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(data, &obj); err != nil {
+			return ld.Document{}, ld.ErrInvalidRemoteContext
+		}
+
+		return ld.Document{
+			URL:     s,
+			Context: obj[ld.KeywordContext],
+		}, nil
+	}
+}
 
 func LoadData(t *testing.T, file string) json.RawMessage {
 	t.Helper()

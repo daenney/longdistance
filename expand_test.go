@@ -1,48 +1,15 @@
 package longdistance_test
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	ld "code.dny.dev/longdistance"
 	"code.dny.dev/longdistance/internal/json"
-	"code.dny.dev/longdistance/internal/url"
 	"github.com/google/go-cmp/cmp"
 )
-
-func FileLoader(t *testing.T) ld.RemoteContextLoaderFunc {
-	t.Helper()
-
-	return func(_ context.Context, s string) (ld.Document, error) {
-		u, err := url.Parse(s)
-		if err != nil {
-			return ld.Document{}, err
-		}
-
-		if u.Scheme != "http" && u.Scheme != "https" {
-			return ld.Document{}, ld.ErrLoadingRemoteContext
-		}
-
-		data := LoadData(t, filepath.Join(
-			filepath.Join("testdata", "w3c"),
-			filepath.Join(strings.Split(u.Path, "/")[3:]...),
-		))
-
-		var obj map[string]json.RawMessage
-		if err := json.Unmarshal(data, &obj); err != nil {
-			return ld.Document{}, ld.ErrInvalidRemoteContext
-		}
-
-		return ld.Document{
-			URL:     s,
-			Context: obj[ld.KeywordContext],
-		}, nil
-	}
-}
 
 func TestExpand(t *testing.T) {
 	// some tests are marked with ordered: true in order to stabilise
