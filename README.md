@@ -1,8 +1,8 @@
 # longdistance
 
-This is a Go library for folks whose relationship status with Linked Data is "It's Complicated". It implements parts of the [JSON-LD 1.1][jld] specification.
+A Go library for folks whose relationship status with Linked Data is "It's Complicated".
 
-It does not currently implement features from the JSON-LD 1.1 Processing Algorithms and API specification that are not needed for handling [ActivityStreams][as].
+This library implements parts of the [JSON-LD 1.1][jld] specification. It does not currently implement features from the JSON-LD 1.1 Processing Algorithms and API specification that are not needed for handling [ActivityStreams][as].
 
 [jld]: https://www.w3.org/TR/json-ld/
 [as]: https://www.w3.org/TR/activitystreams-core/
@@ -18,6 +18,7 @@ See the [godoc](https://pkg.go.dev/code.dny.dev/longdistance).
 ## Supported features
 
 * Context processing.
+  * Remote context retrieval is supported, but requires a loader to be provided.
 * Document expansion.
 * Document compaction.
     * Except `@preserve`.

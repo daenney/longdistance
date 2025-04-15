@@ -11,10 +11,12 @@
 // serialised JSON that you can send out.
 //
 // By default a [Processor] cannot load remote contexts. You can install a
-// [RemoteContextLoaderFunc] using [WithRemoteContextLoader] when creating the processor. You will need to
-// provide your own. In order to not have dependencies on the network when
-// processing documents, it's strongly recommended to create your own
-// implementation of [RemoteContextLoaderFunc] with the necessary contexts built-in.
+// [RemoteContextLoaderFunc] using [WithRemoteContextLoader] when creating the
+// processor. You will need to provide your own. In order to not have
+// dependencies on the network when processing documents, it's strongly
+// recommended to create your own implementation of [RemoteContextLoaderFunc]
+// with the necessary contexts built-in. You can take a look at the FileLoader
+// in helpers_test.go.
 //
 // # JSON typing
 //
