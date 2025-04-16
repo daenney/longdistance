@@ -1,0 +1,17 @@
+
+when:
+  event: cron
+  cron: flakey
+
+steps:
+  - name: prep
+    image: golang:1.24
+    pull: true
+    commands:
+      - go mod download
+  - name: test
+    image: golang:1.24
+    depends_on:
+      - prep
+    commands:
+      - go test -count=100 ./...
