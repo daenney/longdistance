@@ -3,7 +3,7 @@ package url
 import (
 	"fmt"
 	"net/url"
-	"path/filepath"
+	"path"
 	"slices"
 	"strings"
 )
@@ -25,38 +25,44 @@ func Relative(base string, iri string) (string, error) {
 		return "", fmt.Errorf("cannot create relative URL when host or scheme differ")
 	}
 
-	basePath := baseURL.Path
-	if !strings.HasSuffix(basePath, "/") {
-		basePath = filepath.Dir(basePath) + "/"
-	}
-
-	if baseURL.Path == absURL.Path {
+	basePath := baseURL.EscapedPath()
+	absPath := absURL.EscapedPath()
+	if basePath == absPath {
 		if absURL.Fragment != "" || absURL.RawQuery != "" {
-			relURL := &url.URL{
+			return (&url.URL{
 				RawQuery: absURL.RawQuery,
 				Fragment: absURL.Fragment,
-			}
-			return relURL.String(), nil
+			}).String(), nil
 		}
-
-		last := filepath.Base(absURL.Path)
-		if last != "/" {
-			return last, nil
-		}
-		return "./", nil
 	}
 
-	// it's a bit whack to use filepath functions here but
-	// net/url lacks them and it works well enough
-	relPath, err := filepath.Rel(basePath, absURL.Path)
-	if err != nil {
-		return "", fmt.Errorf("failed to compute relative path: %w", err)
+	last := strings.LastIndex(basePath, "/")
+	basePath = basePath[:last+1]
+	baseParts := strings.Split(basePath, "/")
+	absParts := strings.Split(absPath, "/")
+
+	prefix := 0
+	lap := len(absParts)
+	count := min(len(baseParts), lap)
+	for i, elem := range baseParts[:count] {
+		if elem == absParts[i] {
+			prefix++
+		} else {
+			break
+		}
 	}
-	relPath = filepath.ToSlash(relPath)
+
+	relpaths := make([]string, 0, len(baseParts)-prefix)
+	for range baseParts[prefix+1:] {
+		relpaths = append(relpaths, "..")
+	}
+
+	relpaths = append(relpaths, absParts[prefix:]...)
+	final := path.Join(relpaths...)
 
 	// Include query and fragment if present
 	relURL := &url.URL{
-		Path:     relPath,
+		Path:     final,
 		RawQuery: absURL.RawQuery,
 		Fragment: absURL.Fragment,
 	}
