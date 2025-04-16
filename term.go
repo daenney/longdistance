@@ -218,12 +218,13 @@ func (p *Processor) createTerm(
 
 	// 11)
 	if prot, ok := valueObj[KeywordProtected]; ok {
+		if p.modeLD10 {
+			return ErrInvalidTermDefinition
+		}
+
 		var b bool
 		if err := json.Unmarshal(prot, &b); err != nil {
 			return ErrInvalidProtectedValue
-		}
-		if p.modeLD10 {
-			return ErrInvalidTermDefinition
 		}
 		termDef.Protected = b
 	}
