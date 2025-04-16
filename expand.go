@@ -676,8 +676,7 @@ mainLoop:
 				}
 
 				// 13.4.8.2)
-				l = strings.ToLower(l)
-				result.Language = l
+				result.Language = strings.ToLower(l)
 			case KeywordDirection:
 				// 13.4.9)
 				if p.modeLD10 {
