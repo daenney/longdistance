@@ -2,6 +2,7 @@ package longdistance
 
 import (
 	"bytes"
+	"cmp"
 	"log/slog"
 	"maps"
 	"slices"
@@ -36,10 +37,7 @@ func newExpandOptions() expandOptions {
 func (p *Processor) Expand(document json.RawMessage, url string) ([]Node, error) {
 	xopts := newExpandOptions()
 	xopts.ordered = p.ordered
-	baseIRI := url
-	if p.baseIRI != "" {
-		baseIRI = p.baseIRI
-	}
+	baseIRI := cmp.Or(p.baseIRI, url)
 
 	ctx := newContext(baseIRI)
 	if p.expandContext != nil {
@@ -903,10 +901,7 @@ mainLoop:
 			// 13.8.1) implicit, we've already initialised expVal
 
 			// 13.8.2)
-			idxKey := termDef.Index
-			if idxKey == "" {
-				idxKey = KeywordIndex
-			}
+			idxKey := cmp.Or(termDef.Index, KeywordIndex)
 
 			// 13.8.3)
 			idxKeys := slices.Collect(maps.Keys(objVal))

@@ -1,6 +1,7 @@
 package longdistance
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"slices"
@@ -1040,11 +1041,11 @@ func (p *Processor) compact(
 						// 12.8.8.1.1)
 						mapObject = map[string]any{}
 					}
+
 					// 12.8.8.1.2)
-					key := KeywordNone
 					vocab := true
+					key := cmp.Or(expandedItem.ID, KeywordNone)
 					if expandedItem.Has(KeywordID) {
-						key = expandedItem.ID
 						vocab = false
 					}
 					alias, err := p.compactIRI(activeContext, key, nil, vocab, false)
@@ -1083,10 +1084,7 @@ func (p *Processor) compact(
 					}
 
 					// 12.8.8.2.2)
-					key := KeywordNone
-					if expandedItem.Has(KeywordIndex) {
-						key = expandedItem.Index
-					}
+					key := cmp.Or(expandedItem.Index, KeywordNone)
 
 					// 12.8.8.2.3)
 					if v, ok := mapObject[key]; ok {
