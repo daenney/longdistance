@@ -79,8 +79,7 @@ func (n *Node) PropertySet() map[string]struct{} {
 	if n.Has(KeywordList) {
 		res[KeywordList] = struct{}{}
 	}
-	if len(n.Reverse) > 0 {
-		// check len here since we might have an empty initialised map
+	if n.Has(KeywordReverse) {
 		res[KeywordReverse] = struct{}{}
 	}
 	if n.Has(KeywordSet) {
@@ -328,7 +327,7 @@ func (n *Node) MarshalJSON() ([]byte, error) {
 		result[KeywordIncluded] = n.Included
 	}
 
-	if len(n.Reverse) > 0 {
+	if n.Has(KeywordReverse) {
 		result[KeywordReverse] = n.Reverse
 	}
 

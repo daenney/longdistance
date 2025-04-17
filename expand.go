@@ -772,10 +772,6 @@ mainLoop:
 					return err
 				}
 
-				if !result.Has(KeywordReverse) {
-					result.Reverse = make(Properties)
-				}
-
 				for _, obj := range res {
 					// 13.4.13.3)
 					for k, v := range obj.Reverse {
@@ -790,11 +786,15 @@ mainLoop:
 							if item.IsValue() || item.IsList() {
 								return ErrInvalidReversePropertyValue
 							}
+							if !result.Has(KeywordReverse) {
+								result.Reverse = make(Properties, 8)
+							}
 							// 13.4.13.4.2.1.2)
 							result.Reverse[k] = append(result.Reverse[k], item)
 						}
 					}
 				}
+
 				// 13.4.13.5)
 				continue mainLoop
 			case KeywordNest:
