@@ -45,12 +45,12 @@ func (p *Processor) compactIRI(
 	if _, ok := inverse[key]; ok && vocab {
 		// 4.1)
 		defaultLanguage := KeywordNone // 4.1.2)
-		if activeContext.defaultDirection.Set && !activeContext.defaultDirection.Null {
+		if activeContext.defaultDirection != "" {
 			// 4.1.1)
-			defaultLanguage = activeContext.defaultLang.Value + "_" + activeContext.defaultDirection.Value
-		} else if activeContext.defaultLang.Set && !activeContext.defaultLang.Null {
+			defaultLanguage = activeContext.defaultLang + "_" + activeContext.defaultDirection
+		} else if activeContext.defaultLang != "" {
 			// 4.1.2)
-			defaultLanguage = "_" + activeContext.defaultLang.Value
+			defaultLanguage = "_" + activeContext.defaultLang
 		}
 
 		// 4.2) we don't have @preserve
@@ -296,7 +296,7 @@ func (p *Processor) compactIRI(
 			}
 
 			cdef, cok := activeContext.defs[c]
-			if cok && cdef.IRI.Value == object.ID {
+			if cok && cdef.IRI == object.ID {
 				// 4.16.1)
 				preferredValues = append(preferredValues,
 					KeywordVocab,
@@ -363,21 +363,21 @@ func (p *Processor) compactIRI(
 
 	// 7)
 	for term, def := range activeContext.defs {
-		if def.IRI.Null || def.IRI.Value == key || !strings.HasPrefix(
-			key, def.IRI.Value) || !def.Prefix {
+		if def.IRI == "" || def.IRI == key || !strings.HasPrefix(
+			key, def.IRI) || !def.Prefix {
 			// 7.1)
 			continue
 		}
 		// 7.2)
 		candidate := term + ":" + strings.TrimPrefix(
-			key, def.IRI.Value)
+			key, def.IRI)
 
 		// 7.3)
 		cdef, cok := activeContext.defs[candidate]
 
 		if !cok && (compactIRI == "" || sortedLeast(candidate, compactIRI) < 0) {
 			compactIRI = candidate
-		} else if cok && cdef.IRI.Value == key && value == nil {
+		} else if cok && cdef.IRI == key && value == nil {
 			compactIRI = candidate
 		}
 	}
@@ -422,14 +422,14 @@ func (p *Processor) compactValue(
 
 	// 4)
 	language := ctx.defs[prop].Language
-	if !language.Set && ctx.defaultLang.Set {
-		language = ctx.defaultLang
+	if !language.Set && ctx.defaultLang != "" {
+		language = Null[string]{Set: true, Value: ctx.defaultLang}
 	}
 
 	// 5)
 	direction := ctx.defs[prop].Direction
-	if !direction.Set && ctx.defaultDirection.Set {
-		direction = ctx.defaultDirection
+	if !direction.Set && ctx.defaultDirection != "" {
+		direction = Null[string]{Set: true, Value: ctx.defaultDirection}
 	}
 
 	allProps := value.PropertySet()
@@ -613,7 +613,7 @@ func (p *Processor) compact(
 	if activeTermDefinition.Context != nil {
 		opts := newCtxProcessingOpts()
 		opts.override = true
-		nctx, err := p.context(activeContext, activeTermDefinition.Context, activeTermDefinition.BaseIRI.Value, opts)
+		nctx, err := p.context(activeContext, activeTermDefinition.Context, activeTermDefinition.BaseIRI, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -676,7 +676,7 @@ func (p *Processor) compact(
 				nctx, err := p.context(
 					activeContext,
 					cdef.Context,
-					cdef.BaseIRI.Value,
+					cdef.BaseIRI,
 					opts,
 				)
 				if err != nil {
@@ -875,9 +875,9 @@ func (p *Processor) compact(
 
 			var nestResult map[string]any
 
-			if edef, eok := activeContext.defs[itemActiveProperty]; eok && edef.Nest.Set && edef.Nest.Value != "" {
+			if edef, eok := activeContext.defs[itemActiveProperty]; eok && edef.Nest != "" {
 				// 12.7.2)
-				term, err := p.expandIRI(activeContext, edef.Nest.Value, false, true, nil, nil)
+				term, err := p.expandIRI(activeContext, edef.Nest, false, true, nil, nil)
 				if err != nil {
 					return nil, err
 				}
@@ -886,7 +886,7 @@ func (p *Processor) compact(
 					return nil, ErrInvalidNestValue
 				}
 
-				term = edef.Nest.Value
+				term = edef.Nest
 
 				// 12.7.2.2)
 				if _, ok := result[term]; !ok {
@@ -921,9 +921,9 @@ func (p *Processor) compact(
 			// 12.8.2)
 			var nestResult map[string]any
 
-			if edef, eok := activeContext.defs[itemActiveProperty]; eok && edef.Nest.Set && edef.Nest.Value != "" {
+			if edef, eok := activeContext.defs[itemActiveProperty]; eok && edef.Nest != "" {
 				// 12.8.2.1)
-				term, err := p.expandIRI(activeContext, edef.Nest.Value, false, true, nil, nil)
+				term, err := p.expandIRI(activeContext, edef.Nest, false, true, nil, nil)
 				if err != nil {
 					return nil, err
 				}
@@ -932,7 +932,7 @@ func (p *Processor) compact(
 					return nil, ErrInvalidNestValue
 				}
 
-				term = edef.Nest.Value
+				term = edef.Nest
 
 				// 12.8.2.2)
 				if _, ok := result[term]; !ok {

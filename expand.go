@@ -196,7 +196,7 @@ func (p *Processor) expand(
 			nctx, err := p.context(
 				activeContext,
 				propContext,
-				def.BaseIRI.Value,
+				def.BaseIRI,
 				newCtxProcessingOpts(),
 			)
 			if err != nil {
@@ -249,7 +249,7 @@ func (p *Processor) expand(
 		nctx, err := p.context(
 			activeContext,
 			propContext,
-			termDef.BaseIRI.Value,
+			termDef.BaseIRI,
 			ropts,
 		)
 		if err != nil {
@@ -311,7 +311,7 @@ func (p *Processor) expand(
 				nctx, err := p.context(
 					activeContext,
 					tscopeDef.Context,
-					adef.BaseIRI.Value,
+					adef.BaseIRI,
 					ropts,
 				)
 				if err != nil {
@@ -471,7 +471,7 @@ func (p *Processor) expandNestedElement(
 		nctx, err := p.context(
 			activeContext,
 			propContext,
-			termDef.BaseIRI.Value,
+			termDef.BaseIRI,
 			ropts,
 		)
 		if err != nil {
@@ -833,7 +833,7 @@ mainLoop:
 			dir := activeContext.defaultDirection
 			// 13.7.3)
 			if termDef.Direction.Set {
-				dir = termDef.Direction
+				dir = termDef.Direction.Value
 			}
 
 			langKeys := slices.Collect(maps.Keys(langMap))
@@ -870,15 +870,15 @@ mainLoop:
 
 					// 13.7.4.2.3)
 					if langKey != KeywordNone {
-						if ldef := activeContext.defs[langKey]; ldef.IRI.Value != KeywordNone {
+						if ldef := activeContext.defs[langKey]; ldef.IRI != KeywordNone {
 							// 13.7.4.2.4)
 							obj.Language = langKey
 						}
 					}
 
 					// 13.7.4.2.5)
-					if dir.Set {
-						obj.Direction = dir.Value
+					if dir != "" {
+						obj.Direction = dir
 					}
 
 					langPairs = append(langPairs, obj)
@@ -931,7 +931,7 @@ mainLoop:
 							nctx, err := p.context(
 								mapCtx,
 								def.Context,
-								def.BaseIRI.Value,
+								def.BaseIRI,
 								newCtxProcessingOpts(),
 							)
 							if err != nil {
@@ -1231,14 +1231,14 @@ func (p *Processor) expandValue(
 	if json.IsString(value) {
 		// 5.1)
 		lang := ctx.defs[property].Language
-		if !lang.Set {
-			lang = ctx.defaultLang
+		if !lang.Set && ctx.defaultLang != "" {
+			lang = Null[string]{Set: true, Value: ctx.defaultLang}
 		}
 
 		// 5.2)
 		dir := ctx.defs[property].Direction
 		if !dir.Set {
-			dir = ctx.defaultDirection
+			dir = Null[string]{Set: true, Value: ctx.defaultDirection}
 		}
 
 		// 5.3)

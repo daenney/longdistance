@@ -89,7 +89,7 @@ func makeTerms(
 			continue
 		}
 
-		value := def.IRI.Value
+		value := def.IRI
 		if strings.HasPrefix(value, "@") {
 			continue
 		}

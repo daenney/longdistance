@@ -52,10 +52,8 @@ func (p *Processor) expandIRI(
 	// 4)
 	if activeContext != nil {
 		if t, ok := activeContext.defs[value]; ok {
-			if !t.IRI.Null {
-				if isKeyword(t.IRI.Value) {
-					return t.IRI.Value, nil
-				}
+			if isKeyword(t.IRI) {
+				return t.IRI, nil
 			}
 		}
 	}
@@ -64,10 +62,7 @@ func (p *Processor) expandIRI(
 	if vocab {
 		if activeContext != nil {
 			if t, ok := activeContext.defs[value]; ok {
-				if !t.IRI.Null {
-					return t.IRI.Value, nil
-				}
-				return "", nil
+				return t.IRI, nil
 			}
 		}
 	}
@@ -101,8 +96,8 @@ func (p *Processor) expandIRI(
 
 			// 6.4)
 			if activeContext != nil {
-				if t, ok := activeContext.defs[prefix]; ok && !t.IRI.Null && t.Prefix {
-					return t.IRI.Value + suffix, nil
+				if t, ok := activeContext.defs[prefix]; ok && t.IRI != "" && t.Prefix {
+					return t.IRI + suffix, nil
 				}
 			}
 

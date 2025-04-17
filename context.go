@@ -23,8 +23,8 @@ type Context struct {
 	originalBaseIRI string
 
 	vocabMapping     string
-	defaultLang      Null[string]
-	defaultDirection Null[string]
+	defaultLang      string
+	defaultDirection string
 	previousContext  *Context
 	inverse          inverseContext
 }
@@ -35,8 +35,8 @@ func newContext(documentURL string) *Context {
 	return &Context{
 		defs:             make(map[string]Term),
 		protected:        make(map[string]struct{}),
-		defaultLang:      Null[string]{},
-		defaultDirection: Null[string]{},
+		defaultLang:      "",
+		defaultDirection: "",
 		previousContext:  nil,
 		inverse:          nil,
 		currentBaseIRI:   documentURL,
@@ -356,14 +356,17 @@ func (p *Processor) handleDirection(result *Context, dir json.RawMessage) error 
 		return ErrInvalidBaseDirection
 	}
 
-	if !d.Null {
+	if d.Null {
+		result.defaultDirection = ""
+	} else {
 		switch d.Value {
 		case DirectionLTR, DirectionRTL:
 		default:
 			return ErrInvalidBaseDirection
 		}
+		result.defaultDirection = d.Value
 	}
-	result.defaultDirection = d
+
 	return nil
 }
 
@@ -373,9 +376,11 @@ func (p *Processor) handleLanguage(result *Context, lang json.RawMessage) error 
 		return ErrInvalidDefaultLanguage
 	}
 	if !l.Null {
-		l.Value = strings.ToLower(l.Value)
+		result.defaultLang = strings.ToLower(l.Value)
 	}
-	result.defaultLang = l
+	if l.Null {
+		result.defaultLang = ""
+	}
 	return nil
 }
 
@@ -522,8 +527,8 @@ func workIt(activeContext *Context) inverseContext {
 
 	// 2)
 	defaultLang := KeywordNone
-	if activeContext.defaultLang.Set && !activeContext.defaultLang.Null {
-		defaultLang = strings.ToLower(activeContext.defaultLang.Value)
+	if activeContext.defaultLang != "" {
+		defaultLang = strings.ToLower(activeContext.defaultLang)
 	}
 
 	// 3)
@@ -546,7 +551,7 @@ func workIt(activeContext *Context) inverseContext {
 		}
 
 		// 3.3)
-		vvar := def.IRI.Value
+		vvar := def.IRI
 
 		// 3.4)
 		if _, ok := result[vvar]; !ok {
@@ -637,9 +642,9 @@ func workIt(activeContext *Context) inverseContext {
 					langMap[dir] = key
 				}
 			}
-		} else if activeContext.defaultDirection.Set {
+		} else if activeContext.defaultDirection != "" {
 			// 3.16)
-			langDir := strings.ToLower(defaultLang) + "_" + activeContext.defaultDirection.Value
+			langDir := strings.ToLower(defaultLang) + "_" + activeContext.defaultDirection
 			if _, ok := langMap[langDir]; !ok {
 				langMap[langDir] = key
 			}

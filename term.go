@@ -13,18 +13,18 @@ import (
 
 // Term represents a term definition in a JSON-LD context.
 type Term struct {
-	IRI       Null[string]
+	IRI       string
 	Prefix    bool
 	Protected bool
 	Reverse   bool
 
-	BaseIRI   Null[string]
+	BaseIRI   string
 	Context   json.RawMessage
 	Container []string
 	Direction Null[string]
 	Index     string
 	Language  Null[string]
-	Nest      Null[string]
+	Nest      string
 	Type      string
 }
 
@@ -35,7 +35,7 @@ func (t *Term) equalWithoutProtected(ot *Term) bool {
 	if t == nil || ot == nil {
 		return false
 	}
-	if !t.IRI.Equal(&ot.IRI) {
+	if t.IRI != ot.IRI {
 		return false
 	}
 	if t.Prefix != ot.Prefix {
@@ -44,7 +44,7 @@ func (t *Term) equalWithoutProtected(ot *Term) bool {
 	if t.Reverse != ot.Reverse {
 		return false
 	}
-	if !t.BaseIRI.Equal(&ot.BaseIRI) {
+	if t.BaseIRI != ot.BaseIRI {
 		return false
 	}
 	if !bytes.Equal(t.Context, ot.Context) {
@@ -62,7 +62,7 @@ func (t *Term) equalWithoutProtected(ot *Term) bool {
 	if !t.Language.Equal(&ot.Language) {
 		return false
 	}
-	if !t.Nest.Equal(&ot.Nest) {
+	if t.Nest != ot.Nest {
 		return false
 	}
 	if t.Type != ot.Type {
@@ -75,10 +75,10 @@ func (t *Term) IsZero() bool {
 	if t == nil {
 		return true
 	}
-	return !t.IRI.Set && !t.Prefix && !t.Protected &&
-		!t.Reverse && !t.BaseIRI.Set && t.Context == nil &&
+	return t.IRI == "" && !t.Prefix && !t.Protected &&
+		!t.Reverse && t.BaseIRI == "" && t.Context == nil &&
 		t.Container == nil && !t.Direction.Set &&
-		t.Index == "" && !t.Language.Set && !t.Nest.Set &&
+		t.Index == "" && !t.Language.Set && t.Nest == "" &&
 		t.Type == ""
 }
 
@@ -177,7 +177,7 @@ func (p *Processor) createTerm(
 	if !oldDefOK {
 		// check for aliasses
 		for _, def := range activeContext.defs {
-			if !def.IRI.Null && def.IRI.Value == term {
+			if def.IRI != "" && def.IRI == term {
 				oldDef = def
 				oldDefOK = true
 				delete(activeContext.defs, term)
@@ -314,7 +314,7 @@ func (p *Processor) createTerm(
 			return ErrInvalidIRIMapping
 		}
 
-		termDef.IRI = Null[string]{Set: true, Value: u}
+		termDef.IRI = u
 
 		// 13.5)
 		if v, ok := valueObj[KeywordContainer]; ok {
@@ -387,7 +387,7 @@ func (p *Processor) createTerm(
 				return ErrInvalidKeywordAlias
 			}
 
-			termDef.IRI = Null[string]{Set: true, Value: u}
+			termDef.IRI = u
 
 			// 14.2.4)
 			if strings.Contains(term, "/") || (!strings.HasPrefix(term, ":") && !strings.HasSuffix(term, ":") && strings.Contains(term, ":")) {
@@ -408,7 +408,7 @@ func (p *Processor) createTerm(
 				// 14.2.5)
 				if simpleTerm && url.EndsInGenDelim(u) || u == BlankNode {
 					if v, ok := p.remapPrefixIRIs[u]; ok {
-						termDef.IRI = Null[string]{Set: true, Value: v}
+						termDef.IRI = v
 					}
 					termDef.Prefix = true
 				}
@@ -430,10 +430,10 @@ func (p *Processor) createTerm(
 
 		// 15.2)
 		if def, ok := activeContext.defs[prefix]; ok {
-			termDef.IRI = Null[string]{Set: true, Value: def.IRI.Value + suffix}
+			termDef.IRI = def.IRI + suffix
 		} else {
 			// 15.3)
-			termDef.IRI = Null[string]{Set: true, Value: term}
+			termDef.IRI = term
 		}
 	} else if strings.Contains(term, "/") {
 		// 16)
@@ -445,13 +445,13 @@ func (p *Processor) createTerm(
 		if !url.IsIRI(u) {
 			return ErrInvalidIRIMapping
 		}
-		termDef.IRI = Null[string]{Set: true, Value: u}
+		termDef.IRI = u
 	} else if term == KeywordType {
 		// 17)
-		termDef.IRI = Null[string]{Set: true, Value: KeywordType}
+		termDef.IRI = KeywordType
 	} else if activeContext.vocabMapping != "" {
 		// 18)
-		termDef.IRI = Null[string]{Set: true, Value: activeContext.vocabMapping + term}
+		termDef.IRI = activeContext.vocabMapping + term
 	} else {
 		return ErrInvalidIRIMapping
 	}
@@ -591,7 +591,7 @@ func (p *Processor) createTerm(
 
 		// 21.4
 		termDef.Context = ctx
-		termDef.BaseIRI = Null[string]{Set: true, Value: opts.baseURL}
+		termDef.BaseIRI = opts.baseURL
 	}
 
 	_, hasType := valueObj[KeywordType]
@@ -647,7 +647,7 @@ func (p *Processor) createTerm(
 		if n.Null || (isKeyword(n.Value) && n.Value != KeywordNest) {
 			return ErrInvalidNestValue
 		}
-		termDef.Nest = n
+		termDef.Nest = n.Value
 	}
 
 	// 25)
@@ -673,7 +673,7 @@ func (p *Processor) createTerm(
 		termDef.Prefix = p.Value
 
 		// 25.3)
-		if termDef.Prefix && isKeyword(termDef.IRI.Value) {
+		if termDef.Prefix && isKeyword(termDef.IRI) {
 			return ErrInvalidTermDefinition
 		}
 	}
