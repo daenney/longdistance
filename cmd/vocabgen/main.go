@@ -43,10 +43,6 @@ func main() {
 
 	proc := ld.NewProcessor()
 
-	if err != nil {
-		panic(err)
-	}
-
 	res, err := proc.Context(rawCtx[ld.KeywordContext], *docIRI)
 	if err != nil {
 		panic(err)
