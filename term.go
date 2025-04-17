@@ -21,9 +21,9 @@ type Term struct {
 	BaseIRI   string
 	Context   json.RawMessage
 	Container []string
-	Direction Null[string]
+	Direction string
 	Index     string
-	Language  Null[string]
+	Language  string
 	Nest      string
 	Type      string
 }
@@ -53,13 +53,13 @@ func (t *Term) equalWithoutProtected(ot *Term) bool {
 	if !slices.Equal(t.Container, ot.Container) {
 		return false
 	}
-	if !t.Direction.Equal(&ot.Direction) {
+	if t.Direction != ot.Direction {
 		return false
 	}
 	if t.Index != ot.Index {
 		return false
 	}
-	if !t.Language.Equal(&ot.Language) {
+	if t.Language != ot.Language {
 		return false
 	}
 	if t.Nest != ot.Nest {
@@ -77,8 +77,8 @@ func (t *Term) IsZero() bool {
 	}
 	return t.IRI == "" && !t.Prefix && !t.Protected &&
 		!t.Reverse && t.BaseIRI == "" && t.Context == nil &&
-		t.Container == nil && !t.Direction.Set &&
-		t.Index == "" && !t.Language.Set && t.Nest == "" &&
+		t.Container == nil && t.Direction == "" &&
+		t.Index == "" && t.Language == "" && t.Nest == "" &&
 		t.Type == ""
 }
 
@@ -237,18 +237,18 @@ func (p *Processor) createTerm(
 
 	// 12)
 	if typ, ok := valueObj[KeywordType]; ok {
-		var s Null[string]
+		if json.IsNull(typ) {
+			return ErrInvalidTypeMapping
+		}
+
+		var s string
 		// 12.1)
 		if err := json.Unmarshal(typ, &s); err != nil {
 			return ErrInvalidTypeMapping
 		}
 
-		if s.Null {
-			return ErrInvalidTypeMapping
-		}
-
 		// 12.2)
-		u, err := p.expandIRI(activeContext, s.Value, false, true, localContext, defined)
+		u, err := p.expandIRI(activeContext, s, false, true, localContext, defined)
 		if err != nil {
 			return ErrInvalidTypeMapping
 		}
@@ -275,7 +275,7 @@ func (p *Processor) createTerm(
 
 	// prep for branch 14)
 	id, idOK := valueObj[KeywordID]
-	var idStr Null[string]
+	var idStr string
 	idErr := json.Unmarshal(id, &idStr)
 
 	// 13)
@@ -288,24 +288,24 @@ func (p *Processor) createTerm(
 		}
 
 		// 13.2)
-		var s Null[string]
+		if json.IsNull(rev) {
+			return ErrInvalidIRIMapping
+		}
+
+		var s string
 		if err := json.Unmarshal(rev, &s); err != nil {
 			return ErrInvalidIRIMapping
 		}
 
-		if s.Null {
-			return ErrInvalidIRIMapping
-		}
-
 		// 13.3)
-		if looksLikeKeyword(s.Value) {
+		if looksLikeKeyword(s) {
 			p.logger.Warn("keyword lookalike value encountered",
-				slog.String("value", s.Value))
+				slog.String("value", s))
 			return nil
 		}
 
 		// 13.4)
-		u, err := p.expandIRI(activeContext, s.Value, false, true, localContext, defined)
+		u, err := p.expandIRI(activeContext, s, false, true, localContext, defined)
 		if err != nil {
 			return ErrInvalidIRIMapping
 		}
@@ -318,19 +318,19 @@ func (p *Processor) createTerm(
 
 		// 13.5)
 		if v, ok := valueObj[KeywordContainer]; ok {
-			var c Null[string]
-			if err := json.Unmarshal(v, &c); err != nil {
-				return ErrInvalidReverseProperty
-			}
-
-			if !c.Null && c.Value != KeywordSet && c.Value != KeywordIndex {
-				return ErrInvalidReverseProperty
-			}
-
-			if c.Null {
+			if json.IsNull(v) {
 				termDef.Container = nil
 			} else {
-				termDef.Container = []string{c.Value}
+				var c string
+				if err := json.Unmarshal(v, &c); err != nil {
+					return ErrInvalidReverseProperty
+				}
+
+				if c != KeywordSet && c != KeywordIndex {
+					return ErrInvalidReverseProperty
+				}
+
+				termDef.Container = []string{c}
 			}
 		}
 
@@ -341,14 +341,12 @@ func (p *Processor) createTerm(
 		// it t0131 can't pass. So. YOLO.
 		if slices.Contains(termDef.Container, KeywordIndex) {
 			idxVal, idxOK := valueObj[KeywordIndex]
-			if idxOK {
-				var idx Null[string]
+			if idxOK && !json.IsNull(idxVal) {
+				var idx string
 				if err := json.Unmarshal(idxVal, &idx); err != nil {
 					return err
 				}
-				if idx.Set && !idx.Null {
-					termDef.Index = idx.Value
-				}
+				termDef.Index = idx
 			}
 		}
 
@@ -357,24 +355,24 @@ func (p *Processor) createTerm(
 		b := true
 		defined[term] = &b
 		return nil
-	} else if idOK && term != idStr.Value {
+	} else if idOK && term != idStr {
 		// 14.1) 14.2)
 		if idErr != nil {
 			return ErrInvalidIRIMapping
 		}
 
 		// 14.1)
-		if !idStr.Null {
+		if !json.IsNull(id) {
 			// 14.2)
-			if !isKeyword(idStr.Value) && looksLikeKeyword(idStr.Value) {
+			if !isKeyword(idStr) && looksLikeKeyword(idStr) {
 				// 14.2.2)
 				p.logger.Warn("keyword lookalike value encountered",
-					slog.String("value", idStr.Value))
+					slog.String("value", idStr))
 				return nil
 			}
 
 			// 14.2.3)
-			u, err := p.expandIRI(activeContext, idStr.Value, false, true, localContext, defined)
+			u, err := p.expandIRI(activeContext, idStr, false, true, localContext, defined)
 			if err != nil {
 				return err
 			}
@@ -598,38 +596,40 @@ func (p *Processor) createTerm(
 
 	// 22)
 	if lang, ok := valueObj[KeywordLanguage]; ok && !hasType {
-		var lm Null[string]
-		// 22.1)
-		if err := json.Unmarshal(lang, &lm); err != nil {
-			return ErrInvalidLanguageMapping
-		}
+		if json.IsNull(lang) {
+			termDef.Language = KeywordNull
+		} else {
+			var lm string
+			// 22.1)
+			if err := json.Unmarshal(lang, &lm); err != nil {
+				return ErrInvalidLanguageMapping
+			}
 
-		if !lm.Null {
-			lm.Value = strings.ToLower(lm.Value)
+			// 22.2)
+			termDef.Language = strings.ToLower(lm)
 		}
-
-		// 22.2)
-		termDef.Language = lm
 	}
 
 	// 23)
 	if dir, ok := valueObj[KeywordDirection]; ok && !hasType {
-		var d Null[string]
-		// 23.1)
-		if err := json.Unmarshal(dir, &d); err != nil {
-			return ErrInvalidBaseDirection
-		}
+		if json.IsNull(dir) {
+			termDef.Direction = KeywordNull
+		} else {
+			var d string
+			// 23.1)
+			if err := json.Unmarshal(dir, &d); err != nil {
+				return ErrInvalidBaseDirection
+			}
 
-		if !d.Null {
-			switch d.Value {
+			switch d {
 			case DirectionLTR, DirectionRTL:
 			default:
 				return ErrInvalidBaseDirection
 			}
-		}
 
-		// 23.2)
-		termDef.Direction = d
+			// 23.2)
+			termDef.Direction = d
+		}
 	}
 
 	// 24)
@@ -639,15 +639,20 @@ func (p *Processor) createTerm(
 			return ErrInvalidTermDefinition
 		}
 
+		if json.IsNull(nest) {
+			return ErrInvalidNestValue
+		}
+
 		// 24.2)
-		var n Null[string]
+		var n string
 		if err := json.Unmarshal(nest, &n); err != nil {
 			return ErrInvalidNestValue
 		}
-		if n.Null || (isKeyword(n.Value) && n.Value != KeywordNest) {
+
+		if isKeyword(n) && n != KeywordNest {
 			return ErrInvalidNestValue
 		}
-		termDef.Nest = n.Value
+		termDef.Nest = n
 	}
 
 	// 25)
@@ -656,26 +661,27 @@ func (p *Processor) createTerm(
 		if p.modeLD10 {
 			return ErrInvalidTermDefinition
 		}
+
+		// 25.2)
+		if json.IsNull(prefix) {
+			return ErrInvalidPrefixValue
+		}
+
 		if strings.Contains(term, ":") || strings.Contains(term, "/") {
 			return ErrInvalidTermDefinition
 		}
 
-		// 25.2)
-		var p Null[bool]
+		var p bool
 		if err := json.Unmarshal(prefix, &p); err != nil {
 			return ErrInvalidPrefixValue
 		}
 
-		if p.Null {
-			return ErrInvalidPrefixValue
-		}
-
-		termDef.Prefix = p.Value
-
 		// 25.3)
-		if termDef.Prefix && isKeyword(termDef.IRI) {
+		if p && isKeyword(termDef.IRI) {
 			return ErrInvalidTermDefinition
 		}
+
+		termDef.Prefix = p
 	}
 
 	// 26)

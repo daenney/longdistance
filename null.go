@@ -4,24 +4,16 @@ import (
 	"code.dny.dev/longdistance/internal/json"
 )
 
-// Scalar is the interface of Go types that match JSON scalars.
-type Scalar interface {
-	~int | ~int8 | ~int16 | ~int32 | ~int64 |
-		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 |
-		~float32 | ~float64 | ~bool |
-		~string
-}
-
-// Null represents values so we can differentiate between the explicit JSON Null
+// null represents values so we can differentiate between the explicit JSON null
 // versus it being set to some other value, or being absent.
-type Null[T Scalar] struct {
+type null struct {
 	Null  bool
 	Set   bool
-	Value T
+	Value string
 }
 
 // Equal checks if two values are the same.
-func (n *Null[T]) Equal(on *Null[T]) bool {
+func (n *null) Equal(on *null) bool {
 	if n == nil && on == nil {
 		return true
 	}
@@ -32,14 +24,14 @@ func (n *Null[T]) Equal(on *Null[T]) bool {
 	return n.Null == on.Null && n.Set == on.Set && n.Value == on.Value
 }
 
-func (n *Null[T]) UnmarshalJSON(data []byte) error {
+func (n *null) UnmarshalJSON(data []byte) error {
 	n.Set = true
 	if json.IsNull(data) {
 		n.Null = true
 		return nil
 	}
 
-	var s T
+	var s string
 	if err := json.Unmarshal(data, &s); err != nil {
 		return err
 	}

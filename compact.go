@@ -87,8 +87,8 @@ func (p *Processor) compactIRI(
 			// 4.7.2) don't need it
 
 			// 4.7.3)
-			commonLanguage := Null[string]{Set: true, Null: true}
-			commonType := Null[string]{Set: true, Null: true}
+			commonLanguage := null{Set: true, Null: true}
+			commonType := null{Set: true, Null: true}
 			if len(object.List) == 0 {
 				commonLanguage.Null = false
 				commonLanguage.Value = defaultLanguage
@@ -422,14 +422,14 @@ func (p *Processor) compactValue(
 
 	// 4)
 	language := ctx.defs[prop].Language
-	if !language.Set && ctx.defaultLang != "" {
-		language = Null[string]{Set: true, Value: ctx.defaultLang}
+	if language == "" && ctx.defaultLang != "" {
+		language = ctx.defaultLang
 	}
 
 	// 5)
 	direction := ctx.defs[prop].Direction
-	if !direction.Set && ctx.defaultDirection != "" {
-		direction = Null[string]{Set: true, Value: ctx.defaultDirection}
+	if direction == "" && ctx.defaultDirection != "" {
+		direction = ctx.defaultDirection
 	}
 
 	allProps := value.PropertySet()
@@ -472,7 +472,7 @@ func (p *Processor) compactValue(
 			// 9.1)
 			return value.Value, nil
 		}
-	} else if value.IsValue() && (((value.Has(KeywordLanguage) && language.Set && !language.Null && strings.EqualFold(value.Language, language.Value)) || (!value.Has(KeywordLanguage) && language.Set && language.Null) || (!value.Has(KeywordLanguage) && !language.Set)) && ((value.Has(KeywordDirection) && direction.Set && !direction.Null && strings.EqualFold(value.Direction, direction.Value)) || (!value.Has(KeywordDirection) && direction.Set && direction.Null) || (!value.Has(KeywordDirection) && !direction.Set))) {
+	} else if value.IsValue() && (((value.Has(KeywordLanguage) && language != "" && language != KeywordNull && strings.EqualFold(value.Language, language)) || (!value.Has(KeywordLanguage) && language != "" && language == KeywordNull) || (!value.Has(KeywordLanguage) && language == "")) && ((value.Has(KeywordDirection) && direction != "" && direction != KeywordNull && strings.EqualFold(value.Direction, direction)) || (!value.Has(KeywordDirection) && direction != "" && direction == KeywordNull) || (!value.Has(KeywordDirection) && direction == ""))) {
 		// 10)
 		if !value.Has(KeywordIndex) || (value.Has(KeywordIndex) && defOK && slices.Contains(def.Container, KeywordIndex)) {
 			// 10.1)

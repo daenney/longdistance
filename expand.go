@@ -547,17 +547,21 @@ mainLoop:
 			switch expProp {
 			case KeywordID:
 				// 13.4.3)
-				var s Null[string]
+				if json.IsNull(value) {
+					return ErrInvalidIDValue
+				}
+
+				var s string
 				if err := json.Unmarshal(value, &s); err != nil {
 					// 13.4.3.1)
 					return ErrInvalidIDValue
 				}
 
-				if s.Null || s.Value == "" {
+				if s == "" {
 					return ErrInvalidIDValue
 				}
 
-				iri, err := p.expandIRI(activeContext, s.Value, true, false, nil, nil)
+				iri, err := p.expandIRI(activeContext, s, true, false, nil, nil)
 				if err != nil {
 					return err
 				}
@@ -832,8 +836,8 @@ mainLoop:
 			// 13.7.2)
 			dir := activeContext.defaultDirection
 			// 13.7.3)
-			if termDef.Direction.Set {
-				dir = termDef.Direction.Value
+			if termDef.Direction != "" {
+				dir = termDef.Direction
 			}
 
 			langKeys := slices.Collect(maps.Keys(langMap))
@@ -877,7 +881,7 @@ mainLoop:
 					}
 
 					// 13.7.4.2.5)
-					if dir != "" {
+					if dir != "" && dir != KeywordNull {
 						obj.Direction = dir
 					}
 
@@ -1191,12 +1195,17 @@ func (p *Processor) expandValue(
 	switch def.Type {
 	case KeywordID:
 		// 1)
-		var val Null[string]
+		if json.IsNull(value) {
+			break
+		}
+
+		var val string
 		if err := json.Unmarshal(value, &val); err != nil {
 			break // don't coerce types of some other value
 		}
-		if !val.Null && val.Value != "" {
-			u, err := p.expandIRI(ctx, val.Value, true, false, nil, nil)
+
+		if val != "" {
+			u, err := p.expandIRI(ctx, val, true, false, nil, nil)
 			if err != nil {
 				return result, err
 			}
@@ -1205,12 +1214,17 @@ func (p *Processor) expandValue(
 		}
 	case KeywordVocab:
 		// 2)
-		var val Null[string]
+		if json.IsNull(value) {
+			break
+		}
+
+		var val string
 		if err := json.Unmarshal(value, &val); err != nil {
 			break // don't coerce types of some other value
 		}
-		if !val.Null && val.Value != "" {
-			u, err := p.expandIRI(ctx, val.Value, true, true, nil, nil)
+
+		if val != "" {
+			u, err := p.expandIRI(ctx, val, true, true, nil, nil)
 			if err != nil {
 				return result, err
 			}
@@ -1231,24 +1245,24 @@ func (p *Processor) expandValue(
 	if json.IsString(value) {
 		// 5.1)
 		lang := ctx.defs[property].Language
-		if !lang.Set && ctx.defaultLang != "" {
-			lang = Null[string]{Set: true, Value: ctx.defaultLang}
+		if lang == "" && ctx.defaultLang != "" {
+			lang = ctx.defaultLang
 		}
 
 		// 5.2)
 		dir := ctx.defs[property].Direction
-		if !dir.Set {
-			dir = Null[string]{Set: true, Value: ctx.defaultDirection}
+		if dir == "" && ctx.defaultDirection != "" {
+			dir = ctx.defaultDirection
 		}
 
 		// 5.3)
-		if lang.Set && !lang.Null {
-			result.Language = lang.Value
+		if lang != KeywordNull {
+			result.Language = lang
 		}
 
 		// 5.4)
-		if dir.Set && !dir.Null {
-			result.Direction = dir.Value
+		if dir != KeywordNull {
+			result.Direction = dir
 		}
 	}
 

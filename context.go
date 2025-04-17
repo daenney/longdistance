@@ -160,13 +160,8 @@ func (p *Processor) context(
 		case '{':
 			// goes on after the switch
 		default:
-			var s Null[string]
-			if err := json.Unmarshal(context, &s); err != nil {
-				return nil, ErrInvalidLocalContext
-			}
-
 			// 5.1)
-			if s.Null {
+			if json.IsNull(context) {
 				// 5.1.1)
 				if !opts.override && len(result.protected) != 0 {
 					return nil, ErrInvalidContextNullificaton
@@ -183,13 +178,18 @@ func (p *Processor) context(
 				continue
 			}
 
+			var s string
+			if err := json.Unmarshal(context, &s); err != nil {
+				return nil, ErrInvalidLocalContext
+			}
+
 			// 5.2)
 			// 5.2.1)
-			if !url.IsIRI(baseURL) && !url.IsIRI(s.Value) {
+			if !url.IsIRI(baseURL) && !url.IsIRI(s) {
 				return nil, ErrLoadingDocument
 			}
 
-			iri, err := url.Resolve(baseURL, s.Value)
+			iri, err := url.Resolve(baseURL, s)
 			if err != nil {
 				return nil, ErrLoadingDocument
 			}
@@ -289,13 +289,9 @@ func (p *Processor) context(
 		}
 
 		protected := false
-		if prot, ok := ctxObj[KeywordProtected]; ok {
-			var b Null[bool]
-			if err := json.Unmarshal(prot, &b); err != nil {
+		if prot, ok := ctxObj[KeywordProtected]; ok && !json.IsNull(prot) {
+			if err := json.Unmarshal(prot, &protected); err != nil {
 				return nil, ErrInvalidProtectedValue
-			}
-			if !b.Null {
-				protected = b.Value
 			}
 		}
 
@@ -334,12 +330,13 @@ func (p *Processor) handlePropagate(prop json.RawMessage) error {
 	if p.modeLD10 {
 		return ErrInvalidContextEntry
 	}
-	var b Null[bool]
-	if err := json.Unmarshal(prop, &b); err != nil {
+
+	if json.IsNull(prop) {
 		return ErrInvalidPropagateValue
 	}
 
-	if b.Null {
+	var b bool
+	if err := json.Unmarshal(prop, &b); err != nil {
 		return ErrInvalidPropagateValue
 	}
 
@@ -351,57 +348,59 @@ func (p *Processor) handleDirection(result *Context, dir json.RawMessage) error 
 		return ErrInvalidContextEntry
 	}
 
-	var d Null[string]
+	if json.IsNull(dir) {
+		result.defaultDirection = ""
+		return nil
+	}
+
+	var d string
 	if err := json.Unmarshal(dir, &d); err != nil {
 		return ErrInvalidBaseDirection
 	}
 
-	if d.Null {
-		result.defaultDirection = ""
-	} else {
-		switch d.Value {
-		case DirectionLTR, DirectionRTL:
-		default:
-			return ErrInvalidBaseDirection
-		}
-		result.defaultDirection = d.Value
+	switch d {
+	case DirectionLTR, DirectionRTL:
+	default:
+		return ErrInvalidBaseDirection
 	}
 
+	result.defaultDirection = d
 	return nil
 }
 
 func (p *Processor) handleLanguage(result *Context, lang json.RawMessage) error {
-	var l Null[string]
+	if json.IsNull(lang) {
+		result.defaultLang = ""
+		return nil
+	}
+
+	var l string
 	if err := json.Unmarshal(lang, &l); err != nil {
 		return ErrInvalidDefaultLanguage
 	}
-	if !l.Null {
-		result.defaultLang = strings.ToLower(l.Value)
-	}
-	if l.Null {
-		result.defaultLang = ""
-	}
+
+	result.defaultLang = strings.ToLower(l)
 	return nil
 }
 
 func (p *Processor) handleVocab(result *Context, vocab json.RawMessage) error {
 	// 5.8.2)
-	var s Null[string]
-	if err := json.Unmarshal(vocab, &s); err != nil {
-		return ErrInvalidVocabMapping
-	}
-
-	if s.Null {
+	if json.IsNull(vocab) {
 		result.vocabMapping = ""
 		return nil
 	}
 
-	// 5.8.3)
-	if !(url.IsIRI(s.Value) || url.IsRelative(s.Value) || s.Value == BlankNode) {
+	var s string
+	if err := json.Unmarshal(vocab, &s); err != nil {
 		return ErrInvalidVocabMapping
 	}
 
-	u, err := p.expandIRI(result, s.Value, true, true, nil, nil)
+	// 5.8.3)
+	if !(url.IsIRI(s) || url.IsRelative(s) || s == BlankNode) {
+		return ErrInvalidVocabMapping
+	}
+
+	u, err := p.expandIRI(result, s, true, true, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -412,25 +411,25 @@ func (p *Processor) handleVocab(result *Context, vocab json.RawMessage) error {
 
 func (p *Processor) handleBase(result *Context, base json.RawMessage) error {
 	// 5.7.2)
-	var iri Null[string]
-	if err := json.Unmarshal(base, &iri); err != nil {
-		return ErrInvalidBaseIRI
-	}
-
-	if iri.Null {
+	if json.IsNull(base) {
 		result.currentBaseIRI = ""
 		return nil
 	}
 
+	var iri string
+	if err := json.Unmarshal(base, &iri); err != nil {
+		return ErrInvalidBaseIRI
+	}
+
 	// 5.7.3)
-	if url.IsIRI(iri.Value) {
-		result.currentBaseIRI = iri.Value
+	if url.IsIRI(iri) {
+		result.currentBaseIRI = iri
 		return nil
 	}
 
 	// 5.7.4)
-	if url.IsRelative(iri.Value) {
-		u, err := url.Resolve(result.currentBaseIRI, iri.Value)
+	if url.IsRelative(iri) {
+		u, err := url.Resolve(result.currentBaseIRI, iri)
 		if err != nil {
 			return ErrInvalidBaseIRI
 		}
@@ -604,39 +603,39 @@ func workIt(activeContext *Context) inverseContext {
 					typeMap[def.Type] = key
 				}
 			}
-		} else if def.Language.Set || def.Direction.Set {
-			if def.Language.Set && def.Direction.Set {
+		} else if def.Language != "" || def.Direction != "" {
+			if def.Language != "" && def.Direction != "" {
 				// 3.13)
 				// 3.13.1) + 3.13.5)
 				langDir := KeywordNone
-				if !def.Language.Null && !def.Direction.Null {
+				if def.Language != KeywordNull && def.Direction != KeywordNull {
 					// 3.13.2)
-					langDir = strings.ToLower(def.Language.Value) + "_" + def.Direction.Value
-				} else if !def.Language.Null {
+					langDir = strings.ToLower(def.Language) + "_" + def.Direction
+				} else if def.Language != KeywordNull {
 					// 3.13.3)
-					langDir = strings.ToLower(def.Language.Value)
-				} else if !def.Direction.Null {
+					langDir = strings.ToLower(def.Language)
+				} else if def.Direction != KeywordNull {
 					// 3.13.4)
-					langDir = "_" + def.Direction.Value
+					langDir = "_" + def.Direction
 				}
 				// 3.13.6)
 				if _, ok := langMap[langDir]; !ok {
 					langMap[langDir] = key
 				}
-			} else if def.Language.Set {
+			} else if def.Language != "" {
 				// 3.14)
 				lang := KeywordNull
-				if !def.Language.Null {
-					lang = strings.ToLower(def.Language.Value)
+				if def.Language != KeywordNull {
+					lang = strings.ToLower(def.Language)
 				}
 				if _, ok := langMap[lang]; !ok {
 					langMap[lang] = key
 				}
-			} else if def.Direction.Set {
+			} else if def.Direction != "" {
 				// 3.15)
 				dir := KeywordNone
-				if !def.Direction.Null {
-					dir = "_" + def.Direction.Value
+				if def.Direction != KeywordNull {
+					dir = "_" + def.Direction
 				}
 				if _, ok := langMap[dir]; !ok {
 					langMap[dir] = key
