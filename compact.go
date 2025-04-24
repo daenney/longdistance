@@ -87,11 +87,11 @@ func (p *Processor) compactIRI(
 			// 4.7.2) don't need it
 
 			// 4.7.3)
-			commonLanguage := null{Set: true, Null: true}
-			commonType := null{Set: true, Null: true}
+			var commonLanguage *string
+			var commonType *string
+
 			if len(object.List) == 0 {
-				commonLanguage.Null = false
-				commonLanguage.Value = defaultLanguage
+				commonLanguage = &defaultLanguage
 			}
 
 			// 4.7.4)
@@ -120,53 +120,49 @@ func (p *Processor) compactIRI(
 					itemType = KeywordID
 				}
 
-				if commonLanguage.Null {
+				if commonLanguage == nil {
 					// 4.7.4.4)
-					commonLanguage.Null = false
-					commonLanguage.Value = itemLanguage
-				} else if itemLanguage != commonLanguage.Value &&
+					commonLanguage = &itemLanguage
+				} else if itemLanguage != *commonLanguage &&
 					isObject && object.Value != nil {
 					// 4.7.4.5)
-					commonLanguage.Null = false
-					commonLanguage.Value = KeywordNone
+					*commonLanguage = KeywordNone
 				}
 
-				if commonType.Null {
+				if commonType == nil {
 					// 4.7.4.6)
-					commonType.Null = false
-					commonType.Value = itemType
-				} else if itemType != commonType.Value {
+					commonType = &itemType
+				} else if itemType != *commonType {
 					// 4.7.4.7)
-					commonType.Null = false
-					commonType.Value = KeywordNone
+					*commonType = KeywordNone
 				}
 				// 4.7.4.8)
-				if !commonLanguage.Null && !commonType.Null &&
-					commonLanguage.Value == KeywordNone &&
-					commonType.Value == KeywordNone {
+				if commonLanguage != nil && commonType != nil &&
+					*commonLanguage == KeywordNone &&
+					*commonType == KeywordNone {
 					break
 				}
 			}
 
 			// 4.7.5)
-			if commonLanguage.Null {
-				commonLanguage.Null = false
-				commonLanguage.Value = KeywordNone
+			if commonLanguage == nil {
+				commonLanguage = new(string)
+				*commonLanguage = KeywordNone
 			}
 
 			// 4.7.6)
-			if commonType.Null {
-				commonType.Null = false
-				commonType.Value = KeywordNone
+			if commonType == nil {
+				commonType = new(string)
+				*commonType = KeywordNone
 			}
 
-			if commonType.Value != KeywordNone {
+			if *commonType != KeywordNone {
 				// 4.7.7)
 				typeLanguage = KeywordType
-				typeLanguageValue = commonType.Value
+				typeLanguageValue = *commonType
 			} else {
 				// 4.7.8)
-				typeLanguageValue = commonLanguage.Value
+				typeLanguageValue = *commonLanguage
 			}
 		} else if isObject && object.IsGraph() {
 			// 4.8)
