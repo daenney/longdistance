@@ -7,8 +7,8 @@ import (
 	"slices"
 	"strings"
 
-	"code.dny.dev/longdistance/internal/json"
-	"code.dny.dev/longdistance/internal/url"
+	"sourcery.dny.nu/longdistance/internal/json"
+	"sourcery.dny.nu/longdistance/internal/url"
 )
 
 func (p *Processor) compactIRI(

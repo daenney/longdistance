@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	ld "code.dny.dev/longdistance"
-	"code.dny.dev/longdistance/internal/json"
-	"code.dny.dev/longdistance/internal/url"
+	ld "sourcery.dny.nu/longdistance"
+	"sourcery.dny.nu/longdistance/internal/json"
+	"sourcery.dny.nu/longdistance/internal/url"
 	"github.com/google/go-cmp/cmp"
 )
 

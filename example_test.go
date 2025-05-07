@@ -3,7 +3,7 @@ package longdistance
 import (
 	"fmt"
 
-	"code.dny.dev/longdistance/internal/json"
+	"sourcery.dny.nu/longdistance/internal/json"
 )
 
 func Example() {

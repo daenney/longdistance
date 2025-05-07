@@ -1,4 +1,4 @@
-module code.dny.dev/longdistance
+module sourcery.dny.nu/longdistance
 
 go 1.24
 

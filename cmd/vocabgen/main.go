@@ -13,7 +13,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	ld "code.dny.dev/longdistance"
+	ld "sourcery.dny.nu/longdistance"
 )
 
 func main() {

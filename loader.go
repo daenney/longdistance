@@ -3,7 +3,7 @@ package longdistance
 import (
 	"context"
 
-	"code.dny.dev/longdistance/internal/json"
+	"sourcery.dny.nu/longdistance/internal/json"
 )
 
 // RemoteContextLoaderFunc is called to retrieve a remote context.

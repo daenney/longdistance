@@ -3,7 +3,7 @@ package longdistance
 import (
 	"log/slog"
 
-	"code.dny.dev/longdistance/internal/json"
+	"sourcery.dny.nu/longdistance/internal/json"
 )
 
 // ProcessorOption can be used to customise the behaviour of a [Processor].

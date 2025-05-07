@@ -3,8 +3,8 @@ package longdistance_test
 import (
 	"testing"
 
-	ld "code.dny.dev/longdistance"
-	"code.dny.dev/longdistance/internal/json"
+	ld "sourcery.dny.nu/longdistance"
+	"sourcery.dny.nu/longdistance/internal/json"
 	"github.com/google/go-cmp/cmp"
 )
 
