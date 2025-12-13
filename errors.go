@@ -56,4 +56,5 @@ var (
 var (
 	ErrFrameExpansionUnsupported = errors.New("frame expansion is not supported")
 	ErrPreserveUnsupported       = errors.New("@preserve is not supported")
+	ErrInvalid                   = errors.New("context validation failed")
 )

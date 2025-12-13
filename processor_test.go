@@ -1,6 +1,7 @@
 package longdistance_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -57,5 +58,25 @@ func TestRemapPrefixIRIs(t *testing.T) {
 	if _, ok := nodes[0].Properties["http://schema.org/name"]; !ok {
 		t.Logf("%#v\n", nodes[0])
 		t.Fatal("expected IRI to remap.")
+	}
+}
+
+func TestValidateContextFunc(t *testing.T) {
+	proc := ld.NewProcessor(
+		ld.WithValidateContext(func(ctx *ld.Context) bool {
+			defs := ctx.TermMap()
+			if def, ok := defs["test"]; ok {
+				return def.IRI == "https://example.com/test"
+			}
+
+			return true
+		}),
+	)
+
+	compacted := json.RawMessage(`{"@context":{"test": "https://example.com/different"}, "test": "value"}`)
+
+	_, err := proc.Expand(compacted, "")
+	if !errors.Is(err, ld.ErrInvalid) {
+		t.Fatalf("expected: %s, got: %s", ld.ErrInvalid, err)
 	}
 }

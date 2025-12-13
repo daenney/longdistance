@@ -27,6 +27,7 @@ type Processor struct {
 	expandContext             json.RawMessage
 	excludeIRIsFromCompaction []string
 	remapPrefixIRIs           map[string]string
+	validateContextFunc       ValidateContextFunc
 }
 
 // NewProcessor creates a new JSON-LD processor.
@@ -138,5 +139,20 @@ func WithRemapPrefixIRIs(old, new string) ProcessorOption {
 			p.remapPrefixIRIs = make(map[string]string, 2)
 		}
 		p.remapPrefixIRIs[old] = new
+	}
+}
+
+type ValidateContextFunc func(*Context) bool
+
+// WithValidateContext sets the function that will be used to validate the
+// context after it's been processed.
+//
+// This can be used in situations where both JSON-LD aware and JSON-LD unaware
+// processors will process the same message. It can be used to protect term
+// definitions from an unprotected normative context to avoid semantic confusion
+// for JSON-LD unaware processors.
+func WithValidateContext(f ValidateContextFunc) ProcessorOption {
+	return func(p *Processor) {
+		p.validateContextFunc = f
 	}
 }

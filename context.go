@@ -55,6 +55,13 @@ func (c *Context) Terms() iter.Seq2[string, Term] {
 	}
 }
 
+// TermMap returns a map of term to term definitions.
+//
+// This is a copy, modifying it will not modify the context.
+func (c *Context) TermMap() map[string]Term {
+	return maps.Clone(c.defs)
+}
+
 func (c *Context) initInverse() {
 	if c.inverse == nil {
 		c.inverse = workIt(c)
@@ -321,6 +328,10 @@ func (p *Processor) context(
 				}
 			}
 		}
+	}
+
+	if f := p.validateContextFunc; f != nil && !f(result) {
+		return nil, ErrInvalid
 	}
 
 	return result, nil
