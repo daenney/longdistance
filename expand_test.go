@@ -6,11 +6,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	ld "sourcery.dny.nu/longdistance"
 	"sourcery.dny.nu/longdistance/internal/json"
-	"github.com/google/go-cmp/cmp"
 )
 
+// TestExpand runs the W3C expansion tests.
+//
+// Despite the fact that this is the compaction test suite, many of the
+// inputs are in compacted or partially expanded form. So all inputs
+// have to be expanded first, before we attempt compaction.
 func TestExpand(t *testing.T) {
 	// some tests are marked with ordered: true in order to stabilise
 	// order so we can diff with simple JSON comparison

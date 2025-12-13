@@ -3,9 +3,9 @@ package longdistance_test
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	ld "sourcery.dny.nu/longdistance"
 	"sourcery.dny.nu/longdistance/internal/json"
-	"github.com/google/go-cmp/cmp"
 )
 
 func TestExcludeIRIsFromCompaction(t *testing.T) {
