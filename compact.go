@@ -408,6 +408,23 @@ func (p *Processor) compactIRI(
 	return key, nil
 }
 
+func langDirMatch(keyword string, value *Node, expected string) bool {
+	var comp string
+	switch keyword {
+	case KeywordLanguage:
+		comp = value.Language
+	case KeywordDirection:
+		comp = value.Direction
+	}
+
+	if value.Has(keyword) {
+		return expected != "" && expected != KeywordNull &&
+			strings.EqualFold(comp, expected)
+	}
+
+	return expected == "" || expected == KeywordNull
+}
+
 func (p *Processor) compactValue(
 	ctx *Context,
 	prop string,
@@ -467,7 +484,7 @@ func (p *Processor) compactValue(
 			// 9.1)
 			return value.Value, nil
 		}
-	} else if value.IsValue() && (((value.Has(KeywordLanguage) && language != "" && language != KeywordNull && strings.EqualFold(value.Language, language)) || (!value.Has(KeywordLanguage) && language != "" && language == KeywordNull) || (!value.Has(KeywordLanguage) && language == "")) && ((value.Has(KeywordDirection) && direction != "" && direction != KeywordNull && strings.EqualFold(value.Direction, direction)) || (!value.Has(KeywordDirection) && direction != "" && direction == KeywordNull) || (!value.Has(KeywordDirection) && direction == ""))) {
+	} else if value.IsValue() && langDirMatch(KeywordLanguage, value, language) && langDirMatch(KeywordDirection, value, direction) {
 		// 10)
 		if !value.Has(KeywordIndex) || (value.Has(KeywordIndex) && defOK && slices.Contains(def.Container, KeywordIndex)) {
 			// 10.1)
