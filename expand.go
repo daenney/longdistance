@@ -18,16 +18,11 @@ type expandOptions struct {
 	fromMap        bool
 }
 
-func (e expandOptions) clone() expandOptions {
+func (e expandOptions) withoutFromMap() expandOptions {
 	return expandOptions{
 		frameExpansion: e.frameExpansion,
 		ordered:        e.ordered,
-		fromMap:        e.fromMap,
 	}
-}
-
-func newExpandOptions() expandOptions {
-	return expandOptions{}
 }
 
 // Expand transforms a JSON document into JSON-LD expanded document form.
@@ -35,8 +30,7 @@ func newExpandOptions() expandOptions {
 // If the document was retrieved from a URL, pass it as the second argument.
 // Otherwise an empty string.
 func (p *Processor) Expand(document json.RawMessage, url string) ([]Node, error) {
-	xopts := newExpandOptions()
-	xopts.ordered = p.ordered
+	opts := expandOptions{ordered: p.ordered}
 	baseIRI := cmp.Or(p.baseIRI, url)
 
 	ctx := newContext(baseIRI)
@@ -58,7 +52,7 @@ func (p *Processor) Expand(document json.RawMessage, url string) ([]Node, error)
 		ctx = nctx
 	}
 
-	res, err := p.expand(ctx, "", document, url, xopts)
+	res, err := p.expand(ctx, "", document, url, opts)
 	if err != nil {
 		return res, err
 	}
@@ -153,7 +147,7 @@ func (p *Processor) expand(
 				activeProperty,
 				elem,
 				baseURL,
-				opts.clone(),
+				opts,
 			)
 			if err != nil {
 				return nil, err
@@ -369,7 +363,7 @@ func (p *Processor) expand(
 		inputType,
 		baseURL,
 		elemObj,
-		opts.clone(),
+		opts,
 	); err != nil {
 		return nil, err
 	}
@@ -606,10 +600,7 @@ mainLoop:
 				result.Type = append(result.Type, iris...)
 			case KeywordGraph:
 				// 13.4.5)
-				xopts := newExpandOptions()
-				xopts.frameExpansion = opts.frameExpansion
-				xopts.ordered = opts.ordered
-				res, err := p.expand(activeContext, KeywordGraph, value, baseURL, xopts)
+				res, err := p.expand(activeContext, KeywordGraph, value, baseURL, opts.withoutFromMap())
 				if err != nil {
 					return err
 				}
@@ -625,17 +616,13 @@ mainLoop:
 					return ErrInvalidIncludedValue
 				}
 
-				xopts := newExpandOptions()
-				xopts.frameExpansion = opts.frameExpansion
-				xopts.ordered = opts.ordered
-
 				// 13.4.6.2)
 				res, err := p.expand(
 					activeContext,
 					"",
 					value,
 					baseURL,
-					xopts,
+					opts.withoutFromMap(),
 				)
 				if err != nil {
 					return err
@@ -723,15 +710,12 @@ mainLoop:
 					result.List = make([]Node, 0)
 				} else {
 					// 13.4.11.2)
-					xopts := newExpandOptions()
-					xopts.frameExpansion = opts.frameExpansion
-					xopts.ordered = opts.ordered
 					res, err := p.expand(
 						activeContext,
 						activeProperty,
 						value,
 						baseURL,
-						xopts,
+						opts.withoutFromMap(),
 					)
 					if err != nil {
 						return err
@@ -740,15 +724,12 @@ mainLoop:
 				}
 			case KeywordSet:
 				// 13.4.12)
-				xopts := newExpandOptions()
-				xopts.frameExpansion = opts.frameExpansion
-				xopts.ordered = opts.ordered
 				res, err := p.expand(
 					activeContext,
 					activeProperty,
 					value,
 					baseURL,
-					xopts,
+					opts.withoutFromMap(),
 				)
 				if err != nil {
 					return err
@@ -761,16 +742,13 @@ mainLoop:
 					return ErrInvalidReverseValue
 				}
 
-				// 13.4.13.2)
-				xopts := newExpandOptions()
-				xopts.frameExpansion = opts.frameExpansion
-				xopts.ordered = opts.ordered
+				// 13.4.13.2)	}
 				res, err := p.expand(
 					activeContext,
 					KeywordReverse,
 					value,
 					baseURL,
-					xopts,
+					opts.withoutFromMap(),
 				)
 				if err != nil {
 					return err
@@ -959,20 +937,17 @@ mainLoop:
 				idxVal = json.MakeArray(idxVal)
 
 				// 13.8.3.6)
-				xopts := newExpandOptions()
-				xopts.fromMap = true
-				xopts.frameExpansion = opts.frameExpansion
-				xopts.ordered = opts.ordered
 				expIdxVals, err := p.expand(
 					mapCtx,
 					key,
 					idxVal,
 					baseURL,
-					xopts,
+					expandOptions{fromMap: true, frameExpansion: opts.frameExpansion, ordered: opts.ordered},
 				)
 				if err != nil {
 					return err
 				}
+
 				// 13.8.3.7)
 				for _, item := range expIdxVals {
 					// 13.8.3.7.1)
@@ -1034,16 +1009,13 @@ mainLoop:
 			}
 		} else {
 			// 13.9)
-			xopts := newExpandOptions()
-			xopts.frameExpansion = opts.frameExpansion
-			xopts.ordered = opts.ordered
 			var expErr error
 			expVal, expErr = p.expand(
 				activeContext,
 				key,
 				value,
 				baseURL,
-				xopts,
+				opts.withoutFromMap(),
 			)
 			if expErr != nil {
 				return expErr
@@ -1152,7 +1124,7 @@ mainLoop:
 				inputType,
 				baseURL,
 				nestValue,
-				opts.clone(),
+				opts,
 			); err != nil {
 				return err
 			}
