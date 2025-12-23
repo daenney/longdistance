@@ -111,15 +111,11 @@ func (p *Processor) expand(
 		return nil, ErrFrameExpansionUnsupported
 	}
 
-	termDef, hasDef := activeContext.defs[activeProperty]
+	termDef := activeContext.defs[activeProperty]
 
 	// 3)
-	var propContext json.RawMessage
-	if hasDef {
-		if termDef.Context != nil {
-			propContext = termDef.Context
-		}
-	}
+	// If there was no term definition, then .Context is nil.
+	propContext := termDef.Context
 
 	switch element[0] { // null was handled at the function start
 	case '[':
@@ -186,11 +182,10 @@ func (p *Processor) expand(
 
 		// 4.2)
 		if propContext != nil {
-			def := activeContext.defs[activeProperty]
 			nctx, err := p.context(
 				activeContext,
 				propContext,
-				def.BaseIRI,
+				termDef.BaseIRI,
 				newCtxProcessingOpts(),
 			)
 			if err != nil {
@@ -449,22 +444,15 @@ func (p *Processor) expandNestedElement(
 	element json.Object,
 	opts expandOptions,
 ) error {
-	termDef, hasDef := activeContext.defs[activeProperty]
-	// 3)
-	var propContext json.RawMessage
-	if hasDef {
-		if termDef.Context != nil {
-			propContext = termDef.Context
-		}
-	}
+	termDef := activeContext.defs[activeProperty]
 
 	// 8)
-	if propContext != nil {
+	if termDef.Context != nil {
 		ropts := newCtxProcessingOpts()
 		ropts.override = true
 		nctx, err := p.context(
 			activeContext,
-			propContext,
+			termDef.Context,
 			termDef.BaseIRI,
 			ropts,
 		)
