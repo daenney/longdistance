@@ -723,9 +723,7 @@ func selectTerm(
 	preferredValues []string,
 ) string {
 	// 1)
-	if activeContext.inverse == nil {
-		activeContext.inverse = workIt(activeContext)
-	}
+	activeContext.initInverse()
 
 	// 2)
 	inverse := activeContext.inverse
