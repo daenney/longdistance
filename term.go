@@ -211,9 +211,7 @@ func (p *Processor) createTerm(
 
 	// 10)
 	termDef := Term{
-		Prefix:    false,
 		Protected: opts.protected,
-		Reverse:   false,
 	}
 
 	// 11)

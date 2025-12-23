@@ -33,14 +33,10 @@ type Context struct {
 // the current and original base IRI.
 func newContext(documentURL string) *Context {
 	return &Context{
-		defs:             make(map[string]Term),
-		protected:        make(map[string]struct{}),
-		defaultLang:      "",
-		defaultDirection: "",
-		previousContext:  nil,
-		inverse:          nil,
-		currentBaseIRI:   documentURL,
-		originalBaseIRI:  documentURL,
+		defs:            make(map[string]Term),
+		protected:       make(map[string]struct{}),
+		currentBaseIRI:  documentURL,
+		originalBaseIRI: documentURL,
 	}
 }
 
