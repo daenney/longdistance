@@ -1193,44 +1193,23 @@ func (p *Processor) expandValue(
 	result := Node{}
 
 	switch def.Type {
-	case KeywordID:
-		// 1)
+	case KeywordID, KeywordVocab:
+		// 1) 2)
 		if json.IsNull(value) {
 			break
 		}
 
 		var val string
-		if err := json.Unmarshal(value, &val); err != nil {
+		if err := json.Unmarshal(value, &val); err != nil || val == "" {
 			break // don't coerce types of some other value
 		}
 
-		if val != "" {
-			u, err := p.expandIRI(ctx, val, true, false, nil, nil)
-			if err != nil {
-				return result, err
-			}
-			result.ID = u
-			return result, nil
+		u, err := p.expandIRI(ctx, val, true, def.Type == KeywordVocab, nil, nil)
+		if err != nil {
+			return result, err
 		}
-	case KeywordVocab:
-		// 2)
-		if json.IsNull(value) {
-			break
-		}
-
-		var val string
-		if err := json.Unmarshal(value, &val); err != nil {
-			break // don't coerce types of some other value
-		}
-
-		if val != "" {
-			u, err := p.expandIRI(ctx, val, true, true, nil, nil)
-			if err != nil {
-				return result, err
-			}
-			result.ID = u
-			return result, nil
-		}
+		result.ID = u
+		return result, nil
 	case KeywordNone, "":
 		// 4)
 	default:
