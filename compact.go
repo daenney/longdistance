@@ -2,7 +2,6 @@ package longdistance
 
 import (
 	"cmp"
-	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -593,10 +592,8 @@ func (p *Processor) compact(
 		return result[0], nil
 	}
 
-	// 4)
-	if !isObject {
-		return fmt.Errorf("what the fuck"), nil
-	}
+	// 4) We're guaranteed to have an object here. We've checked that it's not
+	// an array and not an object, and we've already handled the array case.
 
 	// 5)
 	if activeContext.previousContext != nil {
