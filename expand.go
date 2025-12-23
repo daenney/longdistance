@@ -800,11 +800,7 @@ mainLoop:
 			langPairs := make([]Node, 0, len(langMap))
 
 			// 13.7.2)
-			dir := activeContext.defaultDirection
-			// 13.7.3)
-			if termDef.Direction != "" {
-				dir = termDef.Direction
-			}
+			dir := cmp.Or(termDef.Direction, activeContext.defaultDirection)
 
 			langKeys := slices.Collect(maps.Keys(langMap))
 			if opts.ordered {
@@ -1183,16 +1179,10 @@ func (p *Processor) expandValue(
 	// 5)
 	if json.IsString(value) {
 		// 5.1)
-		lang := ctx.defs[property].Language
-		if lang == "" && ctx.defaultLang != "" {
-			lang = ctx.defaultLang
-		}
+		lang := cmp.Or(def.Language, ctx.defaultLang)
 
 		// 5.2)
-		dir := ctx.defs[property].Direction
-		if dir == "" && ctx.defaultDirection != "" {
-			dir = ctx.defaultDirection
-		}
+		dir := cmp.Or(def.Direction, ctx.defaultDirection)
 
 		// 5.3)
 		if lang != KeywordNull {

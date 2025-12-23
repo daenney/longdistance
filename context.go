@@ -1,6 +1,7 @@
 package longdistance
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"iter"
@@ -532,10 +533,10 @@ func workIt(activeContext *Context) inverseContext {
 	result := inverseContext{}
 
 	// 2)
-	defaultLang := KeywordNone
-	if activeContext.defaultLang != "" {
-		defaultLang = strings.ToLower(activeContext.defaultLang)
-	}
+	defaultLang := cmp.Or(
+		strings.ToLower(activeContext.defaultLang),
+		KeywordNone,
+	)
 
 	// 3)
 	terms := slices.Collect(maps.Keys(activeContext.defs))

@@ -267,9 +267,10 @@ func (p *Processor) compactIRI(
 		}
 
 		// 4.13)
-		if typeLanguageValue == "" {
-			typeLanguageValue = KeywordNull
-		}
+		typeLanguageValue = cmp.Or(
+			typeLanguageValue,
+			KeywordNull,
+		)
 
 		// 4.14)
 		preferredValues := make([]string, 0, 4)
@@ -433,16 +434,16 @@ func (p *Processor) compactValue(
 	// 1) 2) and 3) aren't needed
 
 	// 4)
-	language := ctx.defs[prop].Language
-	if language == "" && ctx.defaultLang != "" {
-		language = ctx.defaultLang
-	}
+	language := cmp.Or(
+		ctx.defs[prop].Language,
+		ctx.defaultLang,
+	)
 
 	// 5)
-	direction := ctx.defs[prop].Direction
-	if direction == "" && ctx.defaultDirection != "" {
-		direction = ctx.defaultDirection
-	}
+	direction := cmp.Or(
+		ctx.defs[prop].Direction,
+		ctx.defaultDirection,
+	)
 
 	allProps := value.PropertySet()
 	allPropsLen := len(allProps)
