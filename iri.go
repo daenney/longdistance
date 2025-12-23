@@ -49,19 +49,10 @@ func (p *Processor) expandIRI(
 		}
 	}
 
-	// 4)
+	// 4) 5)
 	if activeContext != nil {
 		if t, ok := activeContext.defs[value]; ok {
-			if isKeyword(t.IRI) {
-				return t.IRI, nil
-			}
-		}
-	}
-
-	// 5)
-	if vocab {
-		if activeContext != nil {
-			if t, ok := activeContext.defs[value]; ok {
+			if isKeyword(t.IRI) || vocab {
 				return t.IRI, nil
 			}
 		}
