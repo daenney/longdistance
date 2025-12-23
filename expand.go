@@ -268,6 +268,9 @@ func (p *Processor) expand(
 	objKeys := slices.Collect(maps.Keys(elemObj))
 	slices.Sort(objKeys)
 
+	var typeKey string
+	var stringTerms []string
+
 	for _, k := range objKeys {
 		u, err := p.expandIRI(activeContext, k, false, true, nil, nil)
 		if err != nil {
@@ -278,12 +281,15 @@ func (p *Processor) expand(
 			continue
 		}
 
+		typeKey = k
+
 		val := json.MakeArray(elemObj[k])
 		var values []json.RawMessage
 		if err := json.Unmarshal(val, &values); err != nil {
 			return nil, err
 		}
-		stringTerms := make([]string, 0, len(values))
+
+		stringTerms = make([]string, 0, len(values))
 		for _, term := range values {
 			var s string
 			if err := json.Unmarshal(term, &s); err != nil {
@@ -291,7 +297,9 @@ func (p *Processor) expand(
 			}
 			stringTerms = append(stringTerms, s)
 		}
+
 		slices.Sort(stringTerms)
+
 		for _, term := range stringTerms {
 			if tscopeDef, ok := typContext.defs[term]; ok && tscopeDef.Context != nil {
 				adef := activeContext.defs[term]
@@ -309,6 +317,8 @@ func (p *Processor) expand(
 				activeContext = nctx
 			}
 		}
+
+		break
 	}
 
 	// 12)
@@ -316,32 +326,12 @@ func (p *Processor) expand(
 		Properties: make(Properties, len(objKeys)),
 	}
 	nests := Properties{}
-	inputType := ""
 
-	entry := ""
-	for _, k := range objKeys {
-		u, err := p.expandIRI(activeContext, k, false, true, nil, nil)
-		if err != nil {
-			return nil, err
-		}
-		if u == KeywordType {
-			entry = k
-			break
-		}
-	}
+	var inputType string
 
-	if entry != "" {
-		vals := json.MakeArray(elemObj[entry])
-		var valElems json.Array
-		if err := json.Unmarshal(vals, &valElems); err != nil {
-			return nil, err
-		}
-		last := valElems[len(valElems)-1]
-		var s string
-		if err := json.Unmarshal(last, &s); err != nil {
-			return nil, err
-		}
-		u, err := p.expandIRI(activeContext, s, false, true, nil, nil)
+	if typeKey != "" && len(stringTerms) > 0 {
+		lastTerm := stringTerms[len(stringTerms)-1]
+		u, err := p.expandIRI(activeContext, lastTerm, false, true, nil, nil)
 		if err != nil {
 			return nil, err
 		}
