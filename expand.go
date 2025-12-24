@@ -998,12 +998,7 @@ mainLoop:
 
 		// 13.11)
 		if slices.Contains(termDef.Container, KeywordList) {
-			switch len(expVal) {
-			case 1:
-				if !expVal[0].IsList() {
-					expVal = []Node{{List: expVal}}
-				}
-			default:
+			if len(expVal) != 1 || !expVal[0].IsList() {
 				expVal = []Node{{List: expVal}}
 			}
 		}
