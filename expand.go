@@ -823,11 +823,9 @@ mainLoop:
 					}
 
 					// 13.7.4.2.3)
-					if langKey != KeywordNone {
-						if ldef := activeContext.defs[langKey]; ldef.IRI != KeywordNone {
-							// 13.7.4.2.4)
-							obj.Language = langKey
-						}
+					if ldef := activeContext.defs[langKey]; ldef.IRI != KeywordNone && langKey != KeywordNone {
+						// 13.7.4.2.4)
+						obj.Language = langKey
 					}
 
 					// 13.7.4.2.5)
