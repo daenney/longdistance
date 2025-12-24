@@ -92,13 +92,17 @@ func IsIRI(s string) bool {
 		return false
 	}
 
+	if !u.IsAbs() {
+		return false
+	}
+
 	ns := u.String()
 	if strings.HasSuffix(s, "#") {
 		// preserve the empty fragment
 		ns = ns + "#"
 	}
 
-	return u.IsAbs() && s == ns
+	return s == ns
 }
 
 func Resolve(base string, val string) (string, error) {
