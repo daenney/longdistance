@@ -918,53 +918,55 @@ mainLoop:
 						item = Node{Graph: []Node{item}}
 					}
 
-					if slices.Contains(cnt, KeywordIndex) && idxKey != KeywordIndex && expIdx != KeywordNone {
-						// 13.8.3.7.2)
+					if expIdx != KeywordNone {
+						if slices.Contains(cnt, KeywordIndex) && idxKey != KeywordIndex {
+							// 13.8.3.7.2)
 
-						// 13.8.3.7.2.1)
-						rexpIdx, err := p.expandValue(
-							activeContext,
-							idxKey,
-							[]byte(`"`+idx+`"`), // we know idx is a string so we cheat a little
-						)
-						if err != nil {
-							return err
-						}
+							// 13.8.3.7.2.1)
+							rexpIdx, err := p.expandValue(
+								activeContext,
+								idxKey,
+								[]byte(`"`+idx+`"`), // we know idx is a string so we cheat a little
+							)
+							if err != nil {
+								return err
+							}
 
-						// 13.8.3.7.2.2)
-						expIdxKey, err := p.expandIRI(activeContext, idxKey, false, true, nil, nil)
-						if err != nil {
-							return err
-						}
+							// 13.8.3.7.2.2)
+							expIdxKey, err := p.expandIRI(activeContext, idxKey, false, true, nil, nil)
+							if err != nil {
+								return err
+							}
 
-						// 13.8.3.7.2.3)
-						rexpPropVals := []Node{rexpIdx}
-						rexpPropVals = append(rexpPropVals, item.Properties[expIdxKey]...)
+							// 13.8.3.7.2.3)
+							rexpPropVals := []Node{rexpIdx}
+							rexpPropVals = append(rexpPropVals, item.Properties[expIdxKey]...)
 
-						// 13.8.3.7.2.4)
-						if item.Properties == nil {
-							item.Properties = make(Properties, 4)
-						}
-						item.Properties[expIdxKey] = rexpPropVals
+							// 13.8.3.7.2.4)
+							if item.Properties == nil {
+								item.Properties = make(Properties, 4)
+							}
+							item.Properties[expIdxKey] = rexpPropVals
 
-						// 13.8.3.7.2.5)
-						if item.Has(KeywordValue) && !item.IsValue() {
-							return ErrInvalidValueObject
+							// 13.8.3.7.2.5)
+							if item.Has(KeywordValue) && !item.IsValue() {
+								return ErrInvalidValueObject
+							}
+						} else if slices.Contains(cnt, KeywordIndex) && !item.Has(KeywordIndex) {
+							// 13.8.3.7.3)
+							item.Index = idx
+						} else if slices.Contains(cnt, KeywordID) && !item.Has(KeywordID) {
+							// 13.8.3.7.4)
+							idx, err := p.expandIRI(activeContext,
+								idx, true, false, nil, nil)
+							if err != nil {
+								return err
+							}
+							item.ID = idx
+						} else if slices.Contains(cnt, KeywordType) {
+							// 13.8.3.7.5)
+							item.Type = append([]string{expIdx}, item.Type...)
 						}
-					} else if slices.Contains(cnt, KeywordIndex) && !item.Has(KeywordIndex) && expIdx != KeywordNone {
-						// 13.8.3.7.3)
-						item.Index = idx
-					} else if slices.Contains(cnt, KeywordID) && !item.Has(KeywordID) && expIdx != KeywordNone {
-						// 13.8.3.7.4)
-						idx, err := p.expandIRI(activeContext,
-							idx, true, false, nil, nil)
-						if err != nil {
-							return err
-						}
-						item.ID = idx
-					} else if slices.Contains(cnt, KeywordType) && expIdx != KeywordNone {
-						// 13.8.3.7.5)
-						item.Type = append([]string{expIdx}, item.Type...)
 					}
 					// 13.8.3.7.6)
 					expVal = append(expVal, item)
