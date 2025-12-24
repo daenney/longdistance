@@ -14,7 +14,7 @@ func (p *Processor) expandIRI(
 	relative bool,
 	vocab bool,
 	localContext map[string]json.RawMessage,
-	defined map[string]*bool,
+	defined map[string]termState,
 ) (string, error) {
 	// 1)
 	if isKeyword(value) {
@@ -35,7 +35,7 @@ func (p *Processor) expandIRI(
 	// 3)
 	if hasLocal {
 		if _, ok := localContext[value]; ok {
-			if v := defined[value]; v == nil || !*v {
+			if state := defined[value]; state != termDefined {
 				if err := p.createTerm(
 					activeContext,
 					localContext,
@@ -71,7 +71,7 @@ func (p *Processor) expandIRI(
 			// 6.3)
 			if hasLocal {
 				if _, ok := localContext[prefix]; ok {
-					if v := defined[prefix]; v == nil || !*v {
+					if state := defined[prefix]; state != termDefined {
 						if err := p.createTerm(
 							activeContext,
 							localContext,

@@ -10,6 +10,15 @@ import (
 	"sourcery.dny.nu/longdistance/internal/url"
 )
 
+// termState tracks the definition state of a term during context processing.
+type termState uint8
+
+const (
+	termUndefined termState = iota // Term not yet processed
+	termDefining                    // Term is being defined (for cycle detection)
+	termDefined                     // Term definition is complete
+)
+
 // Term represents a term definition in a JSON-LD context.
 type Term struct {
 	IRI       string
@@ -99,12 +108,12 @@ func (p *Processor) createTerm(
 	activeContext *Context,
 	localContext map[string]json.RawMessage,
 	term string,
-	defined map[string]*bool,
+	defined map[string]termState,
 	opts createTermOptions,
 ) error {
 	// 1)
-	if v := defined[term]; v != nil {
-		if *v {
+	if state := defined[term]; state != termUndefined {
+		if state == termDefined {
 			return nil
 		}
 		return ErrCyclicIRIMapping
@@ -114,8 +123,7 @@ func (p *Processor) createTerm(
 	if term == "" {
 		return ErrInvalidTermDefinition
 	} else {
-		b := false
-		defined[term] = &b
+		defined[term] = termDefining
 	}
 
 	// 3)
@@ -348,8 +356,7 @@ func (p *Processor) createTerm(
 
 		// 13.7
 		activeContext.defs[term] = termDef
-		b := true
-		defined[term] = &b
+		defined[term] = termDefined
 		return nil
 	} else if idOK && term != idStr {
 		// 14.1) 14.2)
@@ -385,9 +392,8 @@ func (p *Processor) createTerm(
 
 			// 14.2.4)
 			if strings.Contains(term, "/") || (!strings.HasPrefix(term, ":") && !strings.HasSuffix(term, ":") && strings.Contains(term, ":")) {
-				b := true
 				// 14.2.4.1)
-				defined[term] = &b
+				defined[term] = termDefined
 
 				// 14.2.4.2)
 				tu, err := p.expandIRI(activeContext, term, false, true, localContext, defined)
@@ -708,8 +714,7 @@ func (p *Processor) createTerm(
 
 	// 28)
 	activeContext.defs[term] = termDef
-	b := true
-	defined[term] = &b
+	defined[term] = termDefined
 	return nil
 }
 

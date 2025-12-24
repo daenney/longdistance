@@ -300,7 +300,7 @@ func (p *Processor) context(
 		}
 
 		// 5.12)
-		defined := map[string]*bool{}
+		defined := map[string]termState{}
 
 		// 5.13)
 		for k := range ctxObj {
