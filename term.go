@@ -3,7 +3,6 @@ package longdistance
 import (
 	"bytes"
 	"log/slog"
-	"maps"
 	"slices"
 	"strings"
 
@@ -137,11 +136,10 @@ func (p *Processor) createTerm(
 			return ErrKeywordRedefinition
 		}
 
-		objCopy := maps.Clone(obj)
-		delete(objCopy, KeywordContainer)
-		delete(objCopy, KeywordProtected)
-		if len(objCopy) != 0 {
-			return ErrKeywordRedefinition
+		for k := range obj {
+			if k != KeywordContainer && k != KeywordProtected {
+				return ErrKeywordRedefinition
+			}
 		}
 
 		if v, ok := obj[KeywordContainer]; ok {
