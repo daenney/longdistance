@@ -60,9 +60,10 @@ func MakeArray(in RawMessage) RawMessage {
 		return in
 	}
 
-	return bytes.Join([][]byte{
-		[]byte(`[`),
-		in,
-		[]byte(`]`),
-	}, nil)
+	buf := make([]byte, 0, len(in)+2)
+	buf = append(buf, '[')
+	buf = append(buf, in...)
+	buf = append(buf, ']')
+
+	return buf
 }

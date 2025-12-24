@@ -15,8 +15,8 @@ type termState uint8
 
 const (
 	termUndefined termState = iota // Term not yet processed
-	termDefining                    // Term is being defined (for cycle detection)
-	termDefined                     // Term definition is complete
+	termDefining                   // Term is being defined (for cycle detection)
+	termDefined                    // Term definition is complete
 )
 
 // Term represents a term definition in a JSON-LD context.
@@ -203,14 +203,13 @@ func (p *Processor) createTerm(
 		}
 
 		// 7)
-		value = bytes.Join([][]byte{
-			[]byte(`{"@id":`),
-			value,
-			[]byte(`}`),
-		}, nil)
+		buf := make([]byte, 0, len(value)+8)
+		buf = append(buf, `{"@id":`...)
+		buf = append(buf, value...)
+		buf = append(buf, '}')
+		value = buf
 	}
 
-	// 9)
 	if err := json.Unmarshal(value, &valueObj); err != nil {
 		return ErrInvalidTermDefinition
 	}
