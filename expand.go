@@ -146,26 +146,28 @@ func (p *Processor) expand(
 				return nil, err
 			}
 
+			// 5.2.3)
+			if !slices.Contains(termDef.Container, KeywordList) {
+				result = append(result, res...)
+				continue
+			}
+
 			// 5.2.2)
-			if slices.Contains(termDef.Container, KeywordList) {
-				if len(elems) > 1 {
-					if len(result) == 0 {
-						result = append(result, Node{List: res})
-					} else {
-						result[0].List = append(result[0].List, res...)
-					}
+			if len(elems) > 1 {
+				if len(result) == 0 {
+					result = append(result, Node{List: res})
 				} else {
-					if json.IsMap(elem) && len(res[0].List) != 0 {
-						result = append(result, res...)
-					} else {
-						result = append(result, Node{List: res})
-					}
+					result[0].List = append(result[0].List, res...)
 				}
 			} else {
-				// 5.2.3)
-				result = append(result, res...)
+				if json.IsMap(elem) && len(res[0].List) != 0 {
+					result = append(result, res...)
+				} else {
+					result = append(result, Node{List: res})
+				}
 			}
 		}
+
 		// 5.3)
 		return result, nil
 	case '{':
