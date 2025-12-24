@@ -505,15 +505,8 @@ mainLoop:
 			}
 
 			// 13.4.2)
-			if result.Has(expProp) {
-				switch expProp {
-				case KeywordIncluded, KeywordType:
-					if p.modeLD10 {
-						return ErrCollidingKeywords
-					}
-				default:
-					return ErrCollidingKeywords
-				}
+			if result.Has(expProp) && (p.modeLD10 || (expProp != KeywordIncluded && expProp != KeywordType)) {
+				return ErrCollidingKeywords
 			}
 
 			switch expProp {
