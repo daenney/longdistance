@@ -740,14 +740,15 @@ mainLoop:
 
 					// 13.4.13.4), 13.4.13.4.2)
 					for k, v := range obj.Properties {
+						if !result.Has(KeywordReverse) {
+							result.Reverse = make(Properties, 8)
+						}
+
 						// 13.4.13.4.2.1
 						for _, item := range v {
 							// 13.4.13.4.2.1.1)
 							if item.IsValue() || item.IsList() {
 								return ErrInvalidReversePropertyValue
-							}
-							if !result.Has(KeywordReverse) {
-								result.Reverse = make(Properties, 8)
 							}
 							// 13.4.13.4.2.1.2)
 							result.Reverse[k] = append(result.Reverse[k], item)
