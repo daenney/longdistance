@@ -1024,20 +1024,7 @@ func (p *Processor) compact(
 						compactedMap[iAlias] = expandedItem.Index
 					}
 					// 12.8.7.2.3)
-					if v, ok := nestResult[itemActiveProperty]; ok {
-						vlist, vok := v.([]any)
-						if !vok {
-							vlist = []any(vlist)
-						}
-						vlist = append(vlist, compactedMap)
-						nestResult[itemActiveProperty] = vlist
-					} else {
-						if asArray {
-							nestResult[itemActiveProperty] = []any{compactedMap}
-						} else {
-							nestResult[itemActiveProperty] = compactedMap
-						}
-					}
+					addToMap(nestResult, itemActiveProperty, compactedMap, asArray)
 				} else {
 					// 12.8.7.3)
 					nestResult[itemActiveProperty] = compactedItem
@@ -1065,24 +1052,7 @@ func (p *Processor) compact(
 					}
 
 					// 12.8.8.1.3)
-					if v, ok := mapObject[alias]; ok {
-						vlist, vok := v.([]any)
-						if !vok {
-							vlist = []any{v}
-						}
-						vlist = append(vlist, compactedItem)
-						mapObject[alias] = vlist
-					} else {
-						if asArray {
-							if _, isArray := compactedItem.([]any); isArray {
-								mapObject[alias] = compactedItem
-							} else {
-								mapObject[alias] = []any{compactedItem}
-							}
-						} else {
-							mapObject[alias] = compactedItem
-						}
-					}
+					addToMap(mapObject, alias, compactedItem, asArray)
 					nestResult[itemActiveProperty] = mapObject
 				} else if slices.Contains(container, KeywordGraph) &&
 					slices.Contains(container, KeywordIndex) && expandedItem.IsSimpleGraph() {
@@ -1098,24 +1068,7 @@ func (p *Processor) compact(
 					key := cmp.Or(expandedItem.Index, KeywordNone)
 
 					// 12.8.8.2.3)
-					if v, ok := mapObject[key]; ok {
-						vlist, vok := v.([]any)
-						if !vok {
-							vlist = []any{v}
-						}
-						vlist = append(vlist, compactedItem)
-						mapObject[key] = vlist
-					} else {
-						if asArray {
-							if _, isArray := compactedItem.([]any); isArray {
-								mapObject[key] = compactedItem
-							} else {
-								mapObject[key] = []any{compactedItem}
-							}
-						} else {
-							mapObject[key] = compactedItem
-						}
-					}
+					addToMap(mapObject, key, compactedItem, asArray)
 					nestResult[itemActiveProperty] = mapObject
 				} else if slices.Contains(container, KeywordGraph) && expandedItem.IsSimpleGraph() {
 					// 12.8.8.3)
@@ -1187,20 +1140,7 @@ func (p *Processor) compact(
 					}
 
 					// 12.8.8.4.4)
-					if v, ok := nestResult[itemActiveProperty]; ok {
-						vlist, vok := v.([]any)
-						if !vok {
-							vlist = []any{v}
-						}
-						vlist = append(vlist, compactedItem)
-						nestResult[itemActiveProperty] = vlist
-					} else {
-						if asArray {
-							nestResult[itemActiveProperty] = []any{compactedItem}
-						} else {
-							nestResult[itemActiveProperty] = compactedItem
-						}
-					}
+					addToMap(nestResult, itemActiveProperty, compactedItem, asArray)
 				}
 			} else if !slices.Contains(container, KeywordGraph) && (slices.Contains(container, KeywordLanguage) ||
 				slices.Contains(container, KeywordIndex) ||
@@ -1368,23 +1308,9 @@ func (p *Processor) compact(
 					}
 					mapKey = alias
 				}
+
 				// 12.8.9.10)
-
-				if v, ok := mapObject[mapKey]; ok {
-					vlist, ok := v.([]any)
-					if !ok {
-						vlist = []any{v}
-					}
-					vlist = append(vlist, compactedItem)
-					mapObject[mapKey] = vlist
-				} else {
-					if asArray {
-						mapObject[mapKey] = []any{compactedItem}
-					} else {
-						mapObject[mapKey] = compactedItem
-					}
-				}
-
+				addToMap(mapObject, mapKey, compactedItem, asArray)
 				nestResult[itemActiveProperty] = mapObject
 			} else {
 				// 12.8.10)
@@ -1410,6 +1336,32 @@ func (p *Processor) compact(
 		}
 	}
 	return result, nil
+}
+
+func addToMap(m map[string]any, key string, item any, asArray bool) {
+	if existing, ok := m[key]; ok {
+		vlist, vok := existing.([]any)
+		if !vok {
+			vlist = []any{existing}
+		}
+
+		vlist = append(vlist, item)
+		m[key] = vlist
+
+		return
+	}
+
+	if asArray {
+		if _, isArray := item.([]any); isArray {
+			m[key] = item
+		} else {
+			m[key] = []any{item}
+		}
+
+		return
+	}
+
+	m[key] = item
 }
 
 // sortedLeast sorts strings based on smallest first and if they're
