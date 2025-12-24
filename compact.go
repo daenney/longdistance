@@ -862,13 +862,14 @@ func (p *Processor) compact(
 		}
 
 		var expandedValue []Node
-		if expandedProperty == KeywordList {
+		switch expandedProperty {
+		case KeywordList:
 			expandedValue = object.List
-		} else if expandedProperty == KeywordGraph {
+		case KeywordGraph:
 			expandedValue = object.Graph
-		} else if expandedProperty == KeywordIncluded {
+		case KeywordIncluded:
 			expandedValue = object.Included
-		} else {
+		default:
 			expandedValue = object.Properties[expandedProperty]
 		}
 
