@@ -364,20 +364,20 @@ func (p *Processor) expand(
 			return nil, ErrInvalidValueObject
 		}
 
-		if slices.Equal(result.Type, []string{KeywordJSON}) {
-			// 15.2)
-		} else if json.IsNull(result.Value) {
+		// 15.2) @json allows anything so don't validate in that case.
+		if !slices.Equal(result.Type, []string{KeywordJSON}) {
 			// 15.3)
-			return nil, nil
-		} else if result.Has(KeywordLanguage) && !json.IsString(result.Value) {
+			if json.IsNull(result.Value) {
+				return nil, nil
+			}
+
 			// 15.4)
-			return nil, ErrInvalidLanguageTaggedValue
-		} else if len(result.Type) > 1 {
+			if result.Has(KeywordLanguage) && !json.IsString(result.Value) {
+				return nil, ErrInvalidLanguageTaggedValue
+			}
+
 			// 15.5)
-			return nil, ErrInvalidTypedValue
-		} else if len(result.Type) == 1 {
-			// 15.5)
-			if !url.IsIRI(result.Type[0]) {
+			if len(result.Type) > 1 || (len(result.Type) == 1 && !url.IsIRI(result.Type[0])) {
 				return nil, ErrInvalidTypedValue
 			}
 		}
