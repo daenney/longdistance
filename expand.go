@@ -865,38 +865,29 @@ mainLoop:
 			for _, idx := range idxKeys {
 				idxVal := objVal[idx]
 
-				var mapCtx *Context
+				// 13.8.3.1) 13.8.3.3)
+				mapCtx := activeContext
 
-				// 13.8.3.1)
-				if slices.Contains(cnt, KeywordID) || slices.Contains(cnt, KeywordType) {
-					if activeContext.previousContext != nil {
-						mapCtx = activeContext.previousContext
-					} else {
-						mapCtx = activeContext
-					}
+				if (slices.Contains(cnt, KeywordID) ||
+					slices.Contains(cnt, KeywordType)) &&
+					activeContext.previousContext != nil {
+					mapCtx = activeContext.previousContext
+				}
 
-					// 13.8.3.2)
-					if slices.Contains(cnt, KeywordType) {
-						if mapCtx == nil {
-							mapCtx = newContext("")
+				// 13.8.3.2)
+				if slices.Contains(cnt, KeywordType) {
+					if def, ok := mapCtx.defs[idx]; ok && def.Context != nil {
+						nctx, err := p.context(
+							mapCtx,
+							def.Context,
+							def.BaseIRI,
+							newCtxProcessingOpts(),
+						)
+						if err != nil {
+							return err
 						}
-
-						if def, ok := mapCtx.defs[idx]; ok && def.Context != nil {
-							nctx, err := p.context(
-								mapCtx,
-								def.Context,
-								def.BaseIRI,
-								newCtxProcessingOpts(),
-							)
-							if err != nil {
-								return err
-							}
-							mapCtx = nctx
-						}
+						mapCtx = nctx
 					}
-				} else {
-					// 13.8.3.3)
-					mapCtx = activeContext
 				}
 
 				// 13.8.3.4)
