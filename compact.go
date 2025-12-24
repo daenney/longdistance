@@ -502,7 +502,7 @@ func (p *Processor) Compact(
 	document []Node,
 	documentURL string,
 ) (json.RawMessage, error) {
-	ctx, err := p.Context(compactionCtx, documentURL)
+	ctx, err := p.context(nil, compactionCtx, documentURL, newCtxProcessingOpts())
 	if err != nil {
 		return nil, err
 	}
