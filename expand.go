@@ -34,8 +34,11 @@ func (p *Processor) Expand(document json.RawMessage, url string) ([]Node, error)
 	opts := expandOptions{ordered: p.ordered}
 	baseIRI := cmp.Or(p.baseIRI, url)
 
-	ctx := newContext(baseIRI)
-	if p.expandContext != nil {
+	var ctx *Context
+
+	if p.expandContext == nil {
+		ctx = newContext(baseIRI)
+	} else {
 		var obj json.Object
 		if err := json.Unmarshal(p.expandContext, &obj); err != nil {
 			return nil, ErrInvalidLocalContext
@@ -46,11 +49,12 @@ func (p *Processor) Expand(document json.RawMessage, url string) ([]Node, error)
 		} else {
 			rawctx = p.expandContext
 		}
-		nctx, err := p.context(ctx, rawctx, ctx.originalBaseIRI, newCtxProcessingOpts())
+
+		var err error
+		ctx, err = p.context(nil, rawctx, "", newCtxProcessingOpts())
 		if err != nil {
 			return nil, err
 		}
-		ctx = nctx
 	}
 
 	res, err := p.expand(ctx, "", document, url, opts)
