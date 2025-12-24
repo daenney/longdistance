@@ -601,9 +601,8 @@ func (p *Processor) compact(
 			return result, nil
 		}
 
-		asList := slices.Contains(activeTermDefinition.Container, KeywordList)
-		asSet := slices.Contains(activeTermDefinition.Container, KeywordSet)
-		if asList || asSet {
+		if slices.Contains(activeTermDefinition.Container, KeywordList) ||
+			slices.Contains(activeTermDefinition.Container, KeywordSet) {
 			return result, nil
 		}
 
