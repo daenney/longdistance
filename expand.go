@@ -3,6 +3,7 @@ package longdistance
 import (
 	"bytes"
 	"cmp"
+	"iter"
 	"log/slog"
 	"maps"
 	"slices"
@@ -211,10 +212,10 @@ func (p *Processor) expand(
 		return nil, err
 	}
 
-	elemKeys := slices.Collect(maps.Keys(elemObj))
-
 	// 7)
 	if activeContext.previousContext != nil && !opts.fromMap {
+		elemKeys := maps.Keys(elemObj)
+
 		hasValue := p.expandsToKeyword(
 			activeContext,
 			KeywordValue,
@@ -1062,7 +1063,7 @@ mainLoop:
 			if p.expandsToKeyword(
 				activeContext,
 				KeywordValue,
-				slices.Collect(maps.Keys(nestValue)),
+				maps.Keys(nestValue),
 			) {
 				// 14.2.1)
 				return ErrInvalidNestValue
@@ -1089,9 +1090,9 @@ mainLoop:
 func (p *Processor) expandsToKeyword(
 	activeContext *Context,
 	keyword string,
-	elems []string,
+	elems iter.Seq[string],
 ) bool {
-	for _, k := range elems {
+	for k := range elems {
 		res, err := p.expandIRI(
 			activeContext,
 			k, false, true, nil, nil,
