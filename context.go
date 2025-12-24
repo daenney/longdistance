@@ -593,61 +593,58 @@ func workIt(activeContext *Context) inverseContext {
 			if _, ok := typeMap[KeywordReverse]; !ok {
 				typeMap[KeywordReverse] = key
 			}
-		} else if def.Type != "" {
-			if def.Type == KeywordNone {
-				// 3.11)
-				if _, ok := langMap[KeywordAny]; !ok {
-					// 3.11.1)
-					langMap[KeywordAny] = key
-				}
-				if _, ok := typeMap[KeywordAny]; !ok {
-					// 3.11.2)
-					typeMap[KeywordAny] = key
-				}
-			} else {
-				// 3.12)
-				if _, ok := typeMap[def.Type]; !ok {
-					// 3.12.1
-					typeMap[def.Type] = key
-				}
+		} else if def.Type == KeywordNone {
+			// 3.11)
+			if _, ok := langMap[KeywordAny]; !ok {
+				// 3.11.1)
+				langMap[KeywordAny] = key
 			}
-		} else if def.Language != "" || def.Direction != "" {
-			if def.Language != "" && def.Direction != "" {
-				// 3.13)
-				// 3.13.1) + 3.13.5)
-				langDir := KeywordNone
-				if def.Language != KeywordNull && def.Direction != KeywordNull {
-					// 3.13.2)
-					langDir = strings.ToLower(def.Language) + "_" + def.Direction
-				} else if def.Language != KeywordNull {
-					// 3.13.3)
-					langDir = strings.ToLower(def.Language)
-				} else if def.Direction != KeywordNull {
-					// 3.13.4)
-					langDir = "_" + def.Direction
-				}
-				// 3.13.6)
-				if _, ok := langMap[langDir]; !ok {
-					langMap[langDir] = key
-				}
-			} else if def.Language != "" {
-				// 3.14)
-				lang := KeywordNull
-				if def.Language != KeywordNull {
-					lang = strings.ToLower(def.Language)
-				}
-				if _, ok := langMap[lang]; !ok {
-					langMap[lang] = key
-				}
-			} else if def.Direction != "" {
-				// 3.15)
-				dir := KeywordNone
-				if def.Direction != KeywordNull {
-					dir = "_" + def.Direction
-				}
-				if _, ok := langMap[dir]; !ok {
-					langMap[dir] = key
-				}
+			if _, ok := typeMap[KeywordAny]; !ok {
+				// 3.11.2)
+				typeMap[KeywordAny] = key
+			}
+		} else if def.Type != "" {
+			// 3.12)
+			if _, ok := typeMap[def.Type]; !ok {
+				// 3.12.1
+				typeMap[def.Type] = key
+			}
+		} else if def.Language != "" && def.Direction != "" {
+			// 3.13)
+			// 3.13.1) + 3.13.5)
+			langDir := KeywordNone
+			if def.Language != KeywordNull && def.Direction != KeywordNull {
+				// 3.13.2)
+				langDir = strings.ToLower(def.Language) + "_" + def.Direction
+			} else if def.Language != KeywordNull {
+				// 3.13.3)
+				langDir = strings.ToLower(def.Language)
+			} else if def.Direction != KeywordNull {
+				// 3.13.4)
+				langDir = "_" + def.Direction
+			}
+
+			// 3.13.6)
+			if _, ok := langMap[langDir]; !ok {
+				langMap[langDir] = key
+			}
+		} else if def.Language != "" {
+			// 3.14)
+			lang := KeywordNull
+			if def.Language != KeywordNull {
+				lang = strings.ToLower(def.Language)
+			}
+			if _, ok := langMap[lang]; !ok {
+				langMap[lang] = key
+			}
+		} else if def.Direction != "" {
+			// 3.15)
+			dir := KeywordNone
+			if def.Direction != KeywordNull {
+				dir = "_" + def.Direction
+			}
+			if _, ok := langMap[dir]; !ok {
+				langMap[dir] = key
 			}
 		} else if activeContext.defaultDirection != "" {
 			// 3.16)
