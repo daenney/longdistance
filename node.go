@@ -277,6 +277,34 @@ func (n *Node) IsSimpleGraph() bool {
 	return len(n.propsWithout(KeywordIndex, KeywordGraph)) == 0
 }
 
+func (n *Node) Len() int {
+	if n == nil {
+		return 0
+	}
+
+	count := len(n.Properties)
+
+	incr := func(set bool) {
+		if set {
+			count++
+		}
+	}
+
+	incr(n.Direction != "")
+	incr(n.Graph != nil)
+	incr(n.ID != "")
+	incr(n.Included != nil)
+	incr(n.Index != "")
+	incr(n.Language != "")
+	incr(n.List != nil)
+	incr(n.Reverse != nil)
+	incr(n.Set != nil)
+	incr(n.Type != nil)
+	incr(n.Value != nil)
+
+	return count
+}
+
 // MarshalJSON encodes to Expanded Document Form.
 func (n *Node) MarshalJSON() ([]byte, error) {
 	if n == nil {

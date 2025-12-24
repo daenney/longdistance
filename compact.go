@@ -259,7 +259,7 @@ func (p *Processor) compactIRI(
 					KeywordIndex+KeywordSet)
 			}
 			// 4.12)
-			if isObject && object.IsValue() && len(object.PropertySet()) == 1 {
+			if isObject && object.IsValue() && object.Len() == 1 {
 				containers = append(containers,
 					KeywordLanguage,
 					KeywordLanguage+KeywordSet)
@@ -445,13 +445,11 @@ func (p *Processor) compactValue(
 		ctx.defaultDirection,
 	)
 
-	allProps := value.PropertySet()
-	allPropsLen := len(allProps)
 	def, defOK := ctx.defs[prop]
 
 	if value.Has(KeywordID) &&
-		(allPropsLen == 1 ||
-			(value.Has(KeywordIndex) && allPropsLen == 2)) {
+		(value.Len() == 1 ||
+			(value.Len() == 2 && value.Has(KeywordIndex))) {
 		// 6)
 		if defOK && def.Type != "" {
 			var res string
@@ -616,7 +614,7 @@ func (p *Processor) compact(
 	// 5)
 	if activeContext.previousContext != nil &&
 		!object.Has(KeywordValue) &&
-		(!object.Has(KeywordID) || len(object.PropertySet()) > 1) {
+		(!object.Has(KeywordID) || object.Len() > 1) {
 		activeContext = activeContext.previousContext
 	}
 
