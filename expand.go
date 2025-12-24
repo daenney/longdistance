@@ -62,11 +62,8 @@ func (p *Processor) Expand(document json.RawMessage, url string) ([]Node, error)
 	}
 
 	// 19)
-	if len(res) == 1 {
-		r := res[0]
-		if r.IsSimpleGraph() {
-			res = r.Graph
-		}
+	if len(res) == 1 && res[0].IsSimpleGraph() {
+		res = res[0].Graph
 	}
 
 	result := make([]Node, 0, len(res))
@@ -412,9 +409,10 @@ func (p *Processor) expand(
 	// 19)
 	if activeProperty == "" || activeProperty == KeywordGraph {
 		props := result.PropertySet()
-		if len(props) == 0 || result.Has(KeywordList) || result.Has(KeywordValue) {
-			return nil, nil
-		} else if len(props) == 1 && result.Has(KeywordID) {
+		if len(props) == 0 ||
+			result.Has(KeywordList) ||
+			result.Has(KeywordValue) ||
+			(len(props) == 1 && result.Has(KeywordID)) {
 			return nil, nil
 		}
 	}
