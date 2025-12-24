@@ -253,7 +253,7 @@ func (p *Processor) compactIRI(
 
 		if !p.modeLD10 {
 			// 4.11)
-			if !isObject || (isObject && !object.Has(KeywordIndex)) {
+			if !isObject || !object.Has(KeywordIndex) {
 				containers = append(containers,
 					KeywordIndex,
 					KeywordIndex+KeywordSet)
@@ -449,7 +449,9 @@ func (p *Processor) compactValue(
 	allPropsLen := len(allProps)
 	def, defOK := ctx.defs[prop]
 
-	if (value.Has(KeywordID) && allPropsLen == 1) || (value.Has(KeywordID) && value.Has(KeywordIndex) && allPropsLen == 2) {
+	if value.Has(KeywordID) &&
+		(allPropsLen == 1 ||
+			(value.Has(KeywordIndex) && allPropsLen == 2)) {
 		// 6)
 		if defOK && def.Type != "" {
 			var res string
@@ -481,17 +483,16 @@ func (p *Processor) compactValue(
 		return nil, nil
 	} else if value.IsValue() && !json.IsString(value.Value) {
 		// 9)
-		if (value.Has(KeywordIndex) && slices.Contains(def.Container, KeywordIndex)) || !value.Has(KeywordIndex) {
+		if !value.Has(KeywordIndex) || slices.Contains(def.Container, KeywordIndex) {
 			// 9.1)
 			return value.Value, nil
 		}
 	} else if value.IsValue() && langDirMatch(KeywordLanguage, value, language) && langDirMatch(KeywordDirection, value, direction) {
 		// 10)
-		if !value.Has(KeywordIndex) || (value.Has(KeywordIndex) && defOK && slices.Contains(def.Container, KeywordIndex)) {
+		if !value.Has(KeywordIndex) || (defOK && slices.Contains(def.Container, KeywordIndex)) {
 			// 10.1)
 			return value.Value, nil
 		}
-
 	}
 
 	// 11) doesn't seem necessary
@@ -614,10 +615,10 @@ func (p *Processor) compact(
 	// an array and not an object, and we've already handled the array case.
 
 	// 5)
-	if activeContext.previousContext != nil {
-		if !object.Has(KeywordValue) && (!object.Has(KeywordID) || len(object.PropertySet()) > 1) {
-			activeContext = activeContext.previousContext
-		}
+	if activeContext.previousContext != nil &&
+		!object.Has(KeywordValue) &&
+		(!object.Has(KeywordID) || len(object.PropertySet()) > 1) {
+		activeContext = activeContext.previousContext
 	}
 
 	// 6)
