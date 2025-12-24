@@ -58,39 +58,24 @@ func (n *Node) PropertySet() map[string]struct{} {
 	}
 
 	res := make(map[string]struct{}, len(n.Properties)+2)
-	if n.Has(KeywordDirection) {
-		res[KeywordDirection] = struct{}{}
+
+	add := func(keyword string, set bool) {
+		if set {
+			res[keyword] = struct{}{}
+		}
 	}
-	if n.Has(KeywordGraph) {
-		res[KeywordGraph] = struct{}{}
-	}
-	if n.Has(KeywordID) {
-		res[KeywordID] = struct{}{}
-	}
-	if n.Has(KeywordIncluded) {
-		res[KeywordIncluded] = struct{}{}
-	}
-	if n.Has(KeywordIndex) {
-		res[KeywordIndex] = struct{}{}
-	}
-	if n.Has(KeywordLanguage) {
-		res[KeywordLanguage] = struct{}{}
-	}
-	if n.Has(KeywordList) {
-		res[KeywordList] = struct{}{}
-	}
-	if n.Has(KeywordReverse) {
-		res[KeywordReverse] = struct{}{}
-	}
-	if n.Has(KeywordSet) {
-		res[KeywordSet] = struct{}{}
-	}
-	if n.Has(KeywordType) {
-		res[KeywordType] = struct{}{}
-	}
-	if n.Has(KeywordValue) {
-		res[KeywordValue] = struct{}{}
-	}
+
+	add(KeywordDirection, n.Direction != "")
+	add(KeywordGraph, n.Graph != nil)
+	add(KeywordID, n.ID != "")
+	add(KeywordIncluded, n.Included != nil)
+	add(KeywordIndex, n.Index != "")
+	add(KeywordLanguage, n.Language != "")
+	add(KeywordList, n.List != nil)
+	add(KeywordReverse, n.Reverse != nil)
+	add(KeywordSet, n.Set != nil)
+	add(KeywordType, n.Type != nil)
+	add(KeywordValue, n.Value != nil)
 
 	for p := range n.Properties {
 		res[p] = struct{}{}
@@ -100,6 +85,10 @@ func (n *Node) PropertySet() map[string]struct{} {
 }
 
 func (n *Node) propsWithout(props ...string) map[string]struct{} {
+	if n == nil {
+		return nil
+	}
+
 	nprops := n.PropertySet()
 	for _, prop := range props {
 		delete(nprops, prop)
@@ -112,7 +101,7 @@ func (n *Node) isNode() bool {
 		return false
 	}
 
-	return !n.Has(KeywordList) && !n.Has(KeywordValue) && !n.Has(KeywordSet)
+	return n.List == nil && n.Value == nil && n.Set == nil
 }
 
 // Has returns if a node has the requested property.
@@ -147,12 +136,8 @@ func (n *Node) Has(prop string) bool {
 	case KeywordReverse:
 		return n.Reverse != nil
 	default:
-		for key := range n.Properties {
-			if prop == key {
-				return true
-			}
-		}
-		return false
+		_, ok := n.Properties[prop]
+		return ok
 	}
 }
 
@@ -162,7 +147,18 @@ func (n *Node) IsZero() bool {
 		return true
 	}
 
-	return len(n.PropertySet()) == 0
+	return n.Direction == "" &&
+		n.Graph == nil &&
+		n.ID == "" &&
+		n.Included == nil &&
+		n.Index == "" &&
+		n.Language == "" &&
+		n.List == nil &&
+		n.Reverse == nil &&
+		n.Set == nil &&
+		n.Type == nil &&
+		n.Value == nil &&
+		len(n.Properties) == 0
 }
 
 // IsSubject checks if this node is a subject.
@@ -176,7 +172,7 @@ func (n *Node) IsSubject() bool {
 		return false
 	}
 
-	if !n.Has(KeywordID) {
+	if n.ID == "" {
 		return false
 	}
 
@@ -194,7 +190,7 @@ func (n *Node) IsSubjectReference() bool {
 		return false
 	}
 
-	if !n.Has(KeywordID) {
+	if n.ID == "" {
 		return false
 	}
 
@@ -211,7 +207,7 @@ func (n *Node) IsList() bool {
 		return false
 	}
 
-	if !n.Has(KeywordList) {
+	if n.List == nil {
 		return false
 	}
 
@@ -232,7 +228,7 @@ func (n *Node) IsValue() bool {
 		return false
 	}
 
-	if !n.Has(KeywordValue) {
+	if n.Value == nil {
 		return false
 	}
 
@@ -256,7 +252,7 @@ func (n *Node) IsGraph() bool {
 		return false
 	}
 
-	if !n.Has(KeywordGraph) {
+	if n.Graph == nil {
 		return false
 	}
 
@@ -274,7 +270,7 @@ func (n *Node) IsSimpleGraph() bool {
 		return false
 	}
 
-	if !n.Has(KeywordGraph) {
+	if n.Graph == nil {
 		return false
 	}
 
@@ -283,17 +279,21 @@ func (n *Node) IsSimpleGraph() bool {
 
 // MarshalJSON encodes to Expanded Document Form.
 func (n *Node) MarshalJSON() ([]byte, error) {
+	if n == nil {
+		return json.Marshal(map[string]any{})
+	}
+
 	result := map[string]any{}
 
-	if n.Has(KeywordID) {
+	if n.ID != "" {
 		result[KeywordID] = n.ID
 	}
 
-	if n.Has(KeywordIndex) {
+	if n.Index != "" {
 		result[KeywordIndex] = n.Index
 	}
 
-	if n.Has(KeywordType) {
+	if n.Type != nil {
 		var data any
 		if n.Value != nil && len(n.Type) == 1 {
 			data = n.Type[0]
@@ -303,31 +303,31 @@ func (n *Node) MarshalJSON() ([]byte, error) {
 		result[KeywordType] = data
 	}
 
-	if n.Has(KeywordValue) {
+	if n.Value != nil {
 		result[KeywordValue] = n.Value
 	}
 
-	if n.Has(KeywordLanguage) {
+	if n.Language != "" {
 		result[KeywordLanguage] = n.Language
 	}
 
-	if n.Has(KeywordDirection) {
+	if n.Direction != "" {
 		result[KeywordDirection] = n.Direction
 	}
 
-	if n.Has(KeywordList) {
+	if n.List != nil {
 		result[KeywordList] = n.List
 	}
 
-	if n.Has(KeywordGraph) {
+	if n.Graph != nil {
 		result[KeywordGraph] = n.Graph
 	}
 
-	if n.Has(KeywordIncluded) {
+	if n.Included != nil {
 		result[KeywordIncluded] = n.Included
 	}
 
-	if n.Has(KeywordReverse) {
+	if n.Reverse != nil {
 		result[KeywordReverse] = n.Reverse
 	}
 
@@ -350,10 +350,11 @@ func (n *Node) GetNodes(property string) []Node {
 	case KeywordSet:
 		return n.Set
 	default:
-		if !n.Has(property) {
+		v, ok := n.Properties[property]
+		if !ok {
 			return nil
 		}
-		return n.Properties[property]
+		return v
 	}
 }
 
