@@ -1,7 +1,7 @@
 package longdistance
 
 import (
-	"sourcery.dny.nu/longdistance/internal/json"
+	"encoding/json"
 )
 
 // Properties is a key-to-array-of-[Node] map.

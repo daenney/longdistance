@@ -1,10 +1,10 @@
 package longdistance
 
 import (
+	"encoding/json"
 	"log/slog"
 	"strings"
 
-	"sourcery.dny.nu/longdistance/internal/json"
 	"sourcery.dny.nu/longdistance/internal/url"
 )
 
