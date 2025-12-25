@@ -1,6 +1,7 @@
 package longdistance_test
 
 import (
+	"bytes"
 	"errors"
 	"testing"
 
@@ -58,6 +59,15 @@ func TestRemapPrefixIRIs(t *testing.T) {
 	if _, ok := nodes[0].Properties["http://schema.org/name"]; !ok {
 		t.Logf("%#v\n", nodes[0])
 		t.Fatal("expected IRI to remap.")
+	}
+
+	com, err := proc.Compact(json.RawMessage(`{"schema":"http://schema.org#"}`), nodes, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if bytes.Contains(com, []byte(`schema.org/`)) {
+		t.Fatal("remap did not apply to compact")
 	}
 }
 
