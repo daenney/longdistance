@@ -2,6 +2,7 @@ package longdistance
 
 import (
 	"bytes"
+	"cmp"
 	"log/slog"
 	"slices"
 	"strings"
@@ -526,9 +527,11 @@ func (p *Processor) createTerm(
 		// 19.4)
 		if slices.Contains(values, KeywordType) {
 			// 19.4.1)
-			if termDef.Type == "" {
-				termDef.Type = KeywordID
-			}
+			termDef.Type = cmp.Or(
+				termDef.Type,
+				KeywordID,
+			)
+
 			// 19.4.2)
 			switch termDef.Type {
 			case KeywordID, KeywordVocab, "":

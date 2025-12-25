@@ -132,9 +132,10 @@ func (p *Processor) context(
 		activeContext = newContext(baseURL)
 	}
 
-	if p.baseIRI != "" {
-		activeContext.currentBaseIRI = p.baseIRI
-	}
+	activeContext.currentBaseIRI = cmp.Or(
+		p.baseIRI,
+		activeContext.currentBaseIRI,
+	)
 
 	// 1)
 	result := activeContext.clone()
