@@ -17,8 +17,38 @@ import (
 
 var dump = flag.Bool("dump", false, "dump the compacted or expanded JSON on test failure")
 
-func FileLoader(t *testing.T) ld.RemoteContextLoaderFunc {
-	t.Helper()
+const ASURL = "https://www.w3.org/ns/activitystreams"
+
+func ProcessContext(tb testing.TB, lctx json.RawMessage, iri string) *ld.Context {
+	tb.Helper()
+	p := ld.NewProcessor()
+
+	ctx, err := p.Context(lctx, iri)
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	return ctx
+}
+
+func StaticLoader(tb testing.TB, file string) ld.RemoteContextLoaderFunc {
+	data := LoadData(tb, file)
+
+	return func(ctx context.Context, s string) (ld.Document, error) {
+		if s == ASURL {
+			return ld.Document{
+				URL:     ASURL,
+				Context: data,
+			}, nil
+		}
+
+		tb.Fatal("unknown remote context")
+		return ld.Document{}, nil
+	}
+}
+
+func FileLoader(tb testing.TB) ld.RemoteContextLoaderFunc {
+	tb.Helper()
 
 	return func(_ context.Context, s string) (ld.Document, error) {
 		u, err := url.Parse(s)
@@ -30,7 +60,7 @@ func FileLoader(t *testing.T) ld.RemoteContextLoaderFunc {
 			return ld.Document{}, ld.ErrLoadingRemoteContext
 		}
 
-		data := LoadData(t, filepath.Join(
+		data := LoadData(tb, filepath.Join(
 			"w3c",
 			filepath.Join(strings.Split(u.Path, "/")[3:]...),
 		))

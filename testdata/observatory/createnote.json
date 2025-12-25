@@ -1,0 +1,66 @@
+{
+    "@context": [
+        "https://www.w3.org/ns/activitystreams",
+        {
+            "ostatus": "http://ostatus.org#",
+            "atomUri": "ostatus:atomUri",
+            "inReplyToAtomUri": "ostatus:inReplyToAtomUri",
+            "conversation": "ostatus:conversation",
+            "sensitive": "as:sensitive",
+            "toot": "http://joinmastodon.org/ns#",
+            "votersCount": "toot:votersCount"
+        }
+    ],
+    "id": "https://example.com/create/1",
+    "type": "Create",
+    "actor": "https://example.com/actor/1",
+    "published": "2020-12-31T23:00:00Z",
+    "to": [
+        "https://www.w3.org/ns/activitystreams#Public"
+    ],
+    "cc": [
+        "https://example.com/actor/1/followers"
+    ],
+    "object": {
+        "id": "https://example.com/object/1",
+        "type": "Note",
+        "summary": "A summary",
+        "inReplyTo": null,
+        "published": "2020-12-31T23:00:00Z",
+        "url": "https://example.com/@actor/status/1",
+        "attributedTo": "https://example.com/actor/1",
+        "to": [
+            "https://www.w3.org/ns/activitystreams#Public"
+        ],
+        "cc": [
+            "https://example.com/actor/1/followers"
+        ],
+        "sensitive": false,
+        "atomUri": "https://example.com/@actor/status/1/feed.xml",
+        "inReplyToAtomUri": null,
+        "conversation": "tag:something:other",
+        "content": "The content of the message",
+        "contentMap": {
+            "en": "The content of the message"
+        },
+        "replies": {
+            "id": "https://example.com/object/1/replies",
+            "type": "Collection",
+            "first": {
+                "type": "CollectionPage",
+                "next": "https://example.com/object/1/replies/next",
+                "partOf": "https://example.com/object/1/replies"
+            }
+        },
+        "likes": {
+            "id": "https://example.com/object/1/likes",
+            "type": "Collection",
+            "totalItems": 5
+        },
+        "shares": {
+            "id": "https://example.com/object/1/shares",
+            "type": "Collection",
+            "totalItems": 123
+        }
+    }
+}

@@ -28,6 +28,7 @@ type Processor struct {
 	excludeIRIsFromCompaction []string
 	remapPrefixIRIs           map[string]string
 	validateContextFunc       ValidateContextFunc
+	processedContext          map[string]*Context
 }
 
 // NewProcessor creates a new JSON-LD processor.
@@ -49,9 +50,15 @@ func NewProcessor(options ...ProcessorOption) *Processor {
 		compactToRelative: true,
 		logger:            slog.New(slog.DiscardHandler),
 	}
+
 	for _, opt := range options {
 		opt(p)
 	}
+
+	if p.expandContext != nil {
+		p.processedContext = nil
+	}
+
 	return p
 }
 
@@ -154,5 +161,26 @@ type ValidateContextFunc func(*Context) bool
 func WithValidateContext(f ValidateContextFunc) ProcessorOption {
 	return func(p *Processor) {
 		p.validateContextFunc = f
+	}
+}
+
+// WithProcessedContext stores the processed context for an IRI.
+//
+// It's used to initiate the context if and only if:
+//   - No terms have been defined on the context yet.
+//   - The first, or only, entry in the document's @context is a remote context.
+//
+// This can be used to amortise the cost of the initial context processing when
+// handling documents that all share a well-known remote context. Any additional
+// contexts will be processed normally.
+//
+// This has no benefit if [WithExpandContext] is used, as in that case terms are
+// already defined on the context before any remote contexts are retrieved.
+func WithProcessedContext(iri string, ctx *Context) ProcessorOption {
+	return func(p *Processor) {
+		if p.processedContext == nil {
+			p.processedContext = make(map[string]*Context, 2)
+		}
+		p.processedContext[iri] = ctx
 	}
 }

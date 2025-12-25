@@ -79,6 +79,22 @@ func (c *Context) clone() *Context {
 	}
 }
 
+// isBlank returns if the context is in a state where we can swap it out with
+// the context from [WithProcessedContext].
+func (c *Context) isBlank() bool {
+	if c == nil {
+		return true
+	}
+
+	return len(c.defs) == 0 &&
+		len(c.protected) == 0 &&
+		c.previousContext == nil &&
+		c.vocabMapping == "" &&
+		c.defaultDirection == "" &&
+		c.defaultLang == "" &&
+		c.inverse == nil
+}
+
 // Context takes in JSON and parses it into a [Context].
 func (p *Processor) Context(localContext json.RawMessage, baseURL string) (*Context, error) {
 	if len(localContext) == 0 {
@@ -211,6 +227,17 @@ func (p *Processor) context(
 				return nil, ErrContextOverflow
 			}
 			opts.remotes = append(opts.remotes, iri)
+
+			if result.isBlank() {
+				if ctx, ok := p.processedContext[iri]; ok {
+					curIRI := result.currentBaseIRI
+					origIRI := result.originalBaseIRI
+					result = ctx.clone()
+					result.currentBaseIRI = curIRI
+					result.originalBaseIRI = origIRI
+					continue
+				}
+			}
 
 			// 5.2.4) 5.2.5)
 			doc, err := p.retrieveRemoteContext(iri)
