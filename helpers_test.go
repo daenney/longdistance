@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	ld "sourcery.dny.nu/longdistance"
 	"sourcery.dny.nu/longdistance/internal/json"
 	"sourcery.dny.nu/longdistance/internal/url"
-	"github.com/google/go-cmp/cmp"
 )
 
 var dump = flag.Bool("dump", false, "dump the compacted or expanded JSON on test failure")
@@ -31,7 +31,7 @@ func FileLoader(t *testing.T) ld.RemoteContextLoaderFunc {
 		}
 
 		data := LoadData(t, filepath.Join(
-			filepath.Join("testdata", "w3c"),
+			"w3c",
 			filepath.Join(strings.Split(u.Path, "/")[3:]...),
 		))
 
@@ -47,10 +47,10 @@ func FileLoader(t *testing.T) ld.RemoteContextLoaderFunc {
 	}
 }
 
-func LoadData(t *testing.T, file string) json.RawMessage {
+func LoadData(t testing.TB, file string) json.RawMessage {
 	t.Helper()
 
-	data, err := os.ReadFile(file)
+	data, err := os.ReadFile(filepath.Join("testdata", file))
 
 	if err != nil {
 		t.Fatalf("failed to load %s: %s", file, err)
