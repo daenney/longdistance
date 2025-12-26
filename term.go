@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"unique"
 
 	"sourcery.dny.nu/longdistance/internal/json"
 	"sourcery.dny.nu/longdistance/internal/url"
@@ -745,7 +746,7 @@ func selectTerm(
 		}
 
 		// 4.3)
-		var valMap map[string]string
+		var valMap map[unique.Handle[string]]string
 		switch typeLanguage {
 		case KeywordLanguage:
 			valMap = typeLanguageMap.Language
@@ -757,7 +758,7 @@ func selectTerm(
 
 		// 4.4)
 		for _, pval := range preferredValues {
-			if v, ok := valMap[pval]; !ok {
+			if v, ok := valMap[unique.Make(pval)]; !ok {
 				// 4.4.1)
 				continue
 			} else {
