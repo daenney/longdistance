@@ -2,7 +2,7 @@
 
 A Go library for folks whose relationship status with Linked Data is "It's Complicated".
 
-This library implements parts of the [JSON-LD 1.1][jld] specification. It does not currently implement features from the JSON-LD 1.1 Processing Algorithms and API specification that are not needed for handling [ActivityStreams][as].
+This library implements parts of the JSON-LD 1.0 and [JSON-LD 1.1][jld] specification. It was initially written to handle [ActivityStreams 2.0][as], but works for most JSON-LD documents. See the Features section for what does and does not work.
 
 [jld]: https://www.w3.org/TR/json-ld/
 [as]: https://www.w3.org/TR/activitystreams-core/
@@ -15,22 +15,24 @@ For each implemented functionality, it passes the associated [JSON-LD test suite
 
 See the [godoc](https://pkg.go.dev/sourcery.dny.nu/longdistance).
 
-## Supported features
+## Features
 
+A limited feature set of [JSON-LD Processing Algorithms and API specification][jldapi] is supported:
 * Context processing.
   * Remote context retrieval is supported, but requires a loader to be provided.
 * Document expansion.
 * Document compaction.
-    * Except `@preserve`.
+    * Except `@preserve` since framing is not supported.
 
-## Unsupported features
+[jldapi]: https://www.w3.org/TR/json-ld11-api/#compaction-algorithm
 
+Not supported:
 * Document flattening.
 * Framing.
 * RDF serialisation/deserialisation.
-* Remote document retrieval.
+* Remote document retrieval and extraction of JSON-LD script elements from HTML.
 
-If you're able and willing to contribute one of these features, please start by opening an issue so we can discuss how to appraoch it.
+By not supporting some of these features, the internals of the library can remain fairly simple. Adding any of these features comes with significant complexity. If you're able and willing to contribute one of these features, please start by opening an issue so we can discuss how to appraoch it.
 
 ## License
 
