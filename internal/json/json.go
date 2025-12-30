@@ -6,13 +6,14 @@ import (
 )
 
 type RawMessage = json.RawMessage
-type Object map[string]RawMessage
-type Array []RawMessage
+type Object = map[string]RawMessage
+type Array = []RawMessage
+type Decoder = json.Decoder
+type Token = json.Token
+type Delim = json.Delim
 
-var Compact = json.Compact
+var NewDecoder = json.NewDecoder
 var Marshal = json.Marshal
-var MarshalIndent = json.MarshalIndent
-var Valid = json.Valid
 var Unmarshal = json.Unmarshal
 
 var (
@@ -20,6 +21,8 @@ var (
 	beginObject = byte('{')
 	beginString = byte('"')
 	null        = RawMessage(`null`)
+
+	emptyArray = []byte(`[]`)
 )
 
 func IsNull(in RawMessage) bool {
@@ -27,23 +30,30 @@ func IsNull(in RawMessage) bool {
 }
 
 func IsArray(in RawMessage) bool {
-	if len(in) == 0 {
+	if len(in) < 2 {
 		return false
 	}
+
 	return in[0] == beginArray
 }
 
+func IsEmptyArray(in RawMessage) bool {
+	return bytes.Equal(in, emptyArray)
+}
+
 func IsMap(in RawMessage) bool {
-	if len(in) == 0 {
+	if len(in) < 2 {
 		return false
 	}
+
 	return in[0] == beginObject
 }
 
 func IsString(in RawMessage) bool {
-	if len(in) == 0 {
+	if len(in) < 2 {
 		return false
 	}
+
 	return in[0] == beginString
 }
 
@@ -53,7 +63,7 @@ func IsScalar(in RawMessage) bool {
 
 func MakeArray(in RawMessage) RawMessage {
 	if len(in) == 0 {
-		return json.RawMessage(`[]`)
+		return emptyArray
 	}
 
 	if IsArray(in) {

@@ -51,7 +51,7 @@ func TestRemapPrefixIRIs(t *testing.T) {
 
 	compacted := json.RawMessage(`{"@context":{"schema":"http://schema.org#"}, "@id":"https://example.com", "schema:name": "Alice"}`)
 
-	nodes, err := proc.Expand(compacted, "")
+	nodes, err := proc.Expand(bytes.NewReader(compacted), "")
 	if err != nil {
 		t.Fatal(err.Error())
 	}
@@ -85,7 +85,7 @@ func TestValidateContextFunc(t *testing.T) {
 
 	compacted := json.RawMessage(`{"@context":{"test": "https://example.com/different"}, "test": "value"}`)
 
-	_, err := proc.Expand(compacted, "")
+	_, err := proc.Expand(bytes.NewReader(compacted), "")
 	if !errors.Is(err, ld.ErrInvalid) {
 		t.Fatalf("expected: %s, got: %s", ld.ErrInvalid, err)
 	}

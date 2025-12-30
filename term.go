@@ -8,8 +8,8 @@ import (
 	"strings"
 	"unique"
 
+	"sourcery.dny.nu/longdistance/internal/iri"
 	"sourcery.dny.nu/longdistance/internal/json"
-	"sourcery.dny.nu/longdistance/internal/url"
 )
 
 // termState tracks the definition state of a term during context processing.
@@ -106,9 +106,48 @@ func newCreateTermOptions() createTermOptions {
 	}
 }
 
+type array[T any] []T
+
+func (a *array[T]) UnmarshalJSON(data []byte) error {
+	if json.IsNull(data) {
+		return nil
+	}
+
+	if json.IsEmptyArray(data) {
+		return nil
+	}
+
+	data = json.MakeArray(data)
+
+	var zero []T
+	if err := json.Unmarshal(data, &zero); err != nil {
+		return err
+	}
+
+	*a = zero
+	return nil
+}
+
+type term struct {
+	Null           bool
+	Simple         bool
+	ID             null[string]
+	Type           string
+	Reverse        string
+	Container      null[array[string]]
+	Index          string
+	Context        json.RawMessage
+	Language       null[string]
+	Direction      null[string]
+	Nest           string
+	Prefix         null[bool]
+	Protected      null[bool]
+	HasUnknownKeys bool
+}
+
 func (p *Processor) createTerm(
-	activeContext *Context,
-	localContext map[string]json.RawMessage,
+	activeCtx *Context,
+	localCtx map[string]term,
 	term string,
 	defined map[string]termState,
 	opts createTermOptions,
@@ -129,7 +168,7 @@ func (p *Processor) createTerm(
 	}
 
 	// 3)
-	value := localContext[term]
+	input := localCtx[term]
 
 	// 4)
 	if term == KeywordType {
@@ -137,35 +176,30 @@ func (p *Processor) createTerm(
 			return ErrKeywordRedefinition
 		}
 
-		var obj map[string]json.RawMessage
-		if err := json.Unmarshal(value, &obj); err != nil {
+		// Check if @type is protected before validating the new definition
+		// If protected and not overriding, return protected term redefinition first
+		if oldDef, oldOK := activeCtx.defs[term]; oldOK && oldDef.Protected && !opts.override {
+			return ErrProtectedTermRedefinition
+		}
+
+		// For @type, only @container and @protected are allowed
+		if input.ID.Set || input.Type != "" || input.Reverse != "" ||
+			input.Index != "" || input.Context != nil || input.Language.Set ||
+			input.Direction.Set || input.Nest != "" || (input.Prefix.Set && input.Prefix.Valid) ||
+			input.HasUnknownKeys {
 			return ErrKeywordRedefinition
 		}
 
-		if len(obj) == 0 {
+		// @container must be @set if provided, and is required for non-simple definitions
+		if input.Container.Set && input.Container.Valid {
+			if len(input.Container.Value) != 1 {
+				return ErrKeywordRedefinition
+			}
+			if input.Container.Value[0] != KeywordSet {
+				return ErrKeywordRedefinition
+			}
+		} else if !input.Simple && !input.Null {
 			return ErrKeywordRedefinition
-		}
-
-		for k := range obj {
-			if k != KeywordContainer && k != KeywordProtected {
-				return ErrKeywordRedefinition
-			}
-		}
-
-		if v, ok := obj[KeywordContainer]; ok {
-			var s string
-			if err := json.Unmarshal(v, &s); err != nil {
-				return ErrKeywordRedefinition
-			}
-			if s != KeywordSet {
-				return ErrKeywordRedefinition
-			}
-		}
-		if v, ok := obj[KeywordProtected]; ok {
-			var b bool
-			if err := json.Unmarshal(v, &b); err != nil {
-				return ErrKeywordRedefinition
-			}
 		}
 	} else {
 		// 5)
@@ -180,40 +214,18 @@ func (p *Processor) createTerm(
 	}
 
 	// 6)
-	oldDef, oldDefOK := activeContext.defs[term]
-	delete(activeContext.defs, term)
+	oldDef, oldDefOK := activeCtx.defs[term]
+	delete(activeCtx.defs, term)
 	if !oldDefOK {
 		// check for aliasses
-		for _, def := range activeContext.defs {
+		for _, def := range activeCtx.defs {
 			if def.IRI != "" && def.IRI == term {
 				oldDef = def
 				oldDefOK = true
-				delete(activeContext.defs, term)
+				delete(activeCtx.defs, term)
 				break
 			}
 		}
-	}
-
-	simpleTerm := false
-	var valueObj map[string]json.RawMessage
-
-	// 7) 8)
-	if json.IsNull(value) || json.IsString(value) {
-		// 8)
-		if json.IsString(value) {
-			simpleTerm = true
-		}
-
-		// 7)
-		buf := make([]byte, 0, len(value)+8)
-		buf = append(buf, `{"@id":`...)
-		buf = append(buf, value...)
-		buf = append(buf, '}')
-		value = buf
-	}
-
-	if err := json.Unmarshal(value, &valueObj); err != nil {
-		return ErrInvalidTermDefinition
 	}
 
 	// 10)
@@ -222,38 +234,23 @@ func (p *Processor) createTerm(
 	}
 
 	// 11)
-	if prot, ok := valueObj[KeywordProtected]; ok {
+	if input.Protected.Set && input.Protected.Valid {
 		if p.modeLD10 {
 			return ErrInvalidTermDefinition
 		}
-
-		var b bool
-		if err := json.Unmarshal(prot, &b); err != nil {
-			return ErrInvalidProtectedValue
-		}
-		termDef.Protected = b
+		termDef.Protected = input.Protected.Value
 	}
 
 	// at this point protected is finalised, so add the
 	// term to the protected set on activeContext
 	if termDef.Protected {
-		activeContext.protected[term] = struct{}{}
+		activeCtx.protected[term] = struct{}{}
 	}
 
 	// 12)
-	if typ, ok := valueObj[KeywordType]; ok {
-		if json.IsNull(typ) {
-			return ErrInvalidTypeMapping
-		}
-
-		var s string
-		// 12.1)
-		if err := json.Unmarshal(typ, &s); err != nil {
-			return ErrInvalidTypeMapping
-		}
-
+	if input.Type != "" {
 		// 12.2)
-		u, err := p.expandIRI(activeContext, s, false, true, localContext, defined)
+		u, err := p.expandIRI(activeCtx, input.Type, false, true, localCtx, defined)
 		if err != nil {
 			return ErrInvalidTypeMapping
 		}
@@ -269,7 +266,7 @@ func (p *Processor) createTerm(
 		switch u {
 		case KeywordID, KeywordJSON, KeywordNone, KeywordVocab:
 		default:
-			if !url.IsIRI(u) {
+			if !iri.IsAbsolute(u) {
 				return ErrInvalidTypeMapping
 			}
 		}
@@ -278,64 +275,42 @@ func (p *Processor) createTerm(
 		termDef.Type = u
 	}
 
-	// prep for branch 14)
-	id, idOK := valueObj[KeywordID]
-	var idStr string
-	idErr := json.Unmarshal(id, &idStr)
-
 	// 13)
-	if rev, ok := valueObj[KeywordReverse]; ok {
-		_, hasID := valueObj[KeywordID]
-		_, hasNest := valueObj[KeywordNest]
+	if input.Reverse != "" {
 		// 13.1)
-		if hasID || hasNest {
+		if input.ID.Set || input.Nest != "" {
 			return ErrInvalidReverseProperty
 		}
 
-		// 13.2)
-		if json.IsNull(rev) {
-			return ErrInvalidIRIMapping
-		}
-
-		var s string
-		if err := json.Unmarshal(rev, &s); err != nil {
-			return ErrInvalidIRIMapping
-		}
-
 		// 13.3)
-		if looksLikeKeyword(s) {
+		if looksLikeKeyword(input.Reverse) {
 			p.logger.Warn("keyword lookalike value encountered",
-				slog.String("value", s))
+				slog.String("value", input.Reverse))
 			return nil
 		}
 
 		// 13.4)
-		u, err := p.expandIRI(activeContext, s, false, true, localContext, defined)
+		u, err := p.expandIRI(activeCtx, input.Reverse, false, true, localCtx, defined)
 		if err != nil {
 			return ErrInvalidIRIMapping
 		}
 
-		if !url.IsIRI(u) && u != BlankNode {
+		if !iri.IsAbsolute(u) && u != BlankNode {
 			return ErrInvalidIRIMapping
 		}
 
 		termDef.IRI = u
 
 		// 13.5)
-		if v, ok := valueObj[KeywordContainer]; ok {
-			if json.IsNull(v) {
-				termDef.Container = nil
+		if input.Container.Set {
+			if input.Container.Valid {
+				if input.Container.Value[0] != KeywordSet &&
+					input.Container.Value[0] != KeywordIndex {
+					return ErrInvalidReverseProperty
+				}
+				termDef.Container = input.Container.Value
 			} else {
-				var c string
-				if err := json.Unmarshal(v, &c); err != nil {
-					return ErrInvalidReverseProperty
-				}
-
-				if c != KeywordSet && c != KeywordIndex {
-					return ErrInvalidReverseProperty
-				}
-
-				termDef.Container = []string{c}
+				termDef.Container = nil
 			}
 		}
 
@@ -344,93 +319,79 @@ func (p *Processor) createTerm(
 
 		// This whole step is missing in the spec but without
 		// it t0131 can't pass. So. YOLO.
-		if slices.Contains(termDef.Container, KeywordIndex) {
-			idxVal, idxOK := valueObj[KeywordIndex]
-			if idxOK && !json.IsNull(idxVal) {
-				var idx string
-				if err := json.Unmarshal(idxVal, &idx); err != nil {
-					return err
-				}
-				termDef.Index = idx
-			}
+		if slices.Contains(termDef.Container, KeywordIndex) && input.Index != "" {
+			termDef.Index = input.Index
 		}
 
 		// 13.7
-		activeContext.defs[term] = termDef
+		activeCtx.defs[term] = termDef
 		defined[term] = termDefined
 		return nil
-	} else if idOK && term != idStr {
-		// 14.1) 14.2)
-		if idErr != nil {
+	} else if input.ID.Set && input.ID.Valid && term != input.ID.Value {
+		// 14.2)
+		if !isKeyword(input.ID.Value) && looksLikeKeyword(input.ID.Value) {
+			// 14.2.2)
+			p.logger.Warn("keyword lookalike value encountered",
+				slog.String("value", input.ID.Value))
+			return nil
+		}
+
+		// 14.2.3)
+		u, err := p.expandIRI(activeCtx, input.ID.Value, false, true, localCtx, defined)
+		if err != nil {
+			return err
+		}
+
+		if !isKeyword(u) && !iri.IsAbsolute(u) && u != BlankNode {
 			return ErrInvalidIRIMapping
 		}
 
-		// 14.1)
-		if !json.IsNull(id) {
-			// 14.2)
-			if !isKeyword(idStr) && looksLikeKeyword(idStr) {
-				// 14.2.2)
-				p.logger.Warn("keyword lookalike value encountered",
-					slog.String("value", idStr))
-				return nil
-			}
+		if u == KeywordContext {
+			return ErrInvalidKeywordAlias
+		}
 
-			// 14.2.3)
-			u, err := p.expandIRI(activeContext, idStr, false, true, localContext, defined)
+		termDef.IRI = u
+
+		// 14.2.4)
+		if strings.Contains(term, "/") || (!strings.HasPrefix(term, ":") && !strings.HasSuffix(term, ":") && strings.Contains(term, ":")) {
+			// 14.2.4.1)
+			defined[term] = termDefined
+
+			// 14.2.4.2)
+			tu, err := p.expandIRI(activeCtx, term, false, true, localCtx, defined)
 			if err != nil {
-				return err
-			}
-
-			if !isKeyword(u) && !url.IsIRI(u) && u != BlankNode {
 				return ErrInvalidIRIMapping
 			}
 
-			if u == KeywordContext {
-				return ErrInvalidKeywordAlias
+			if tu != u {
+				return ErrInvalidIRIMapping
 			}
-
-			termDef.IRI = u
-
-			// 14.2.4)
-			if strings.Contains(term, "/") || (!strings.HasPrefix(term, ":") && !strings.HasSuffix(term, ":") && strings.Contains(term, ":")) {
-				// 14.2.4.1)
-				defined[term] = termDefined
-
-				// 14.2.4.2)
-				tu, err := p.expandIRI(activeContext, term, false, true, localContext, defined)
-				if err != nil {
-					return ErrInvalidIRIMapping
+		} else {
+			// 14.2.5)
+			if input.Simple && iri.EndsInGenDelim(u) || u == BlankNode {
+				if v, ok := p.remapPrefixIRIs[u]; ok {
+					termDef.IRI = v
 				}
-
-				if tu != u {
-					return ErrInvalidIRIMapping
-				}
-			} else {
-				// 14.2.5)
-				if simpleTerm && url.EndsInGenDelim(u) || u == BlankNode {
-					if v, ok := p.remapPrefixIRIs[u]; ok {
-						termDef.IRI = v
-					}
-					termDef.Prefix = true
-				}
+				termDef.Prefix = true
 			}
 		}
+	} else if input.ID.Set && !input.ID.Valid {
+		// 14.1) @id was explicitly null
 	} else if strings.Contains(term[1:], ":") {
 		// 15)
 		prefix, suffix, _ := strings.Cut(term, ":")
 
 		// 15.1)
 		if !strings.HasPrefix(suffix, "//") {
-			if _, ok := localContext[prefix]; ok {
-				err := p.createTerm(activeContext, localContext, prefix, defined, newCreateTermOptions())
-				if err != nil {
+			if _, ok := localCtx[prefix]; ok {
+				if err := p.createTerm(activeCtx, localCtx, prefix, defined, newCreateTermOptions()); err != nil {
 					return err
 				}
 			}
 		}
 
 		// 15.2)
-		if def, ok := activeContext.defs[prefix]; ok {
+		if def, ok := activeCtx.defs[prefix]; ok {
 			termDef.IRI = def.IRI + suffix
 		} else {
 			// 15.3)
@@ -439,45 +400,32 @@ func (p *Processor) createTerm(
 	} else if strings.Contains(term, "/") {
 		// 16)
 		// 16.2)
-		u, err := p.expandIRI(activeContext, term, false, true, nil, nil)
+		u, err := p.expandIRI(activeCtx, term, false, true, nil, nil)
 		if err != nil {
 			return ErrInvalidIRIMapping
 		}
-		if !url.IsIRI(u) {
+		if !iri.IsAbsolute(u) {
 			return ErrInvalidIRIMapping
 		}
 		termDef.IRI = u
 	} else if term == KeywordType {
 		// 17)
 		termDef.IRI = KeywordType
-	} else if activeContext.vocabMapping != "" {
+	} else if activeCtx.vocabMapping != "" {
 		// 18)
-		termDef.IRI = activeContext.vocabMapping + term
+		termDef.IRI = activeCtx.vocabMapping + term
 	} else {
 		return ErrInvalidIRIMapping
 	}
 
 	// 19)
-	if cnt, ok := valueObj[KeywordContainer]; ok {
-		if json.IsNull(cnt) {
+	if input.Container.Set {
+		if !input.Container.Valid {
 			return ErrInvalidContainerMapping
 		}
-
-		// 19.2)
-		// do this check early since we're going to rewrap
-		// into an array
-		if p.modeLD10 && !json.IsString(cnt) {
-			return ErrInvalidContainerMapping
-		}
-
-		cnt = json.MakeArray(cnt)
 
 		// 19.1)
-		var values []string
-		if err := json.Unmarshal(cnt, &values); err != nil {
-			return ErrInvalidContainerMapping
-		}
-
+		values := input.Container.Value
 		for _, vl := range values {
 			switch vl {
 			case KeywordGraph, KeywordID, KeywordIndex,
@@ -513,9 +461,6 @@ func (p *Processor) createTerm(
 
 		// 19.2)
 		if p.modeLD10 {
-			if len(values) > 1 {
-				return ErrInvalidContainerMapping
-			}
 			switch values[0] {
 			case KeywordID, KeywordGraph, KeywordType:
 				return ErrInvalidContainerMapping
@@ -543,7 +488,7 @@ func (p *Processor) createTerm(
 	}
 
 	// 20)
-	if idx, ok := valueObj[KeywordIndex]; ok {
+	if input.Index != "" {
 		// 20.1)
 		if p.modeLD10 {
 			return ErrInvalidTermDefinition
@@ -553,24 +498,20 @@ func (p *Processor) createTerm(
 		}
 
 		// 20.2)
-		var s string
-		if err := json.Unmarshal(idx, &s); err != nil {
-			return ErrInvalidTermDefinition
-		}
-		u, err := p.expandIRI(activeContext, s, false, true, localContext, defined)
+		u, err := p.expandIRI(activeCtx, input.Index, false, true, localCtx, defined)
 		if err != nil {
 			return ErrInvalidTermDefinition
 		}
-		if !url.IsIRI(u) {
+		if !iri.IsAbsolute(u) {
 			return ErrInvalidTermDefinition
 		}
 
 		// 20.3)
-		termDef.Index = s
+		termDef.Index = input.Index
 	}
 
 	// 21)
-	if ctx, ok := valueObj[KeywordContext]; ok {
+	if input.Context != nil {
 		// 21.1)
 		if p.modeLD10 {
 			return ErrInvalidTermDefinition
@@ -581,9 +522,10 @@ func (p *Processor) createTerm(
 		resolvOpts.override = true
 		resolvOpts.remotes = slices.Clone(opts.remotes)
 		resolvOpts.validate = false
+		ctxDec := json.NewDecoder(bytes.NewReader(input.Context))
 		_, err := p.context(
-			activeContext,
-			ctx,
+			activeCtx,
+			ctxDec,
 			opts.baseURL,
 			resolvOpts,
 		)
@@ -593,115 +535,67 @@ func (p *Processor) createTerm(
 		}
 
 		// 21.4
-		termDef.Context = ctx
+		termDef.Context = input.Context
 		termDef.BaseIRI = opts.baseURL
 	}
 
-	_, hasType := valueObj[KeywordType]
-
 	// 22)
-	if lang, ok := valueObj[KeywordLanguage]; ok && !hasType {
-		if json.IsNull(lang) {
+	if input.Language.Set && input.Type == "" {
+		if !input.Language.Valid {
 			termDef.Language = KeywordNull
 		} else {
-			var lm string
-			// 22.1)
-			if err := json.Unmarshal(lang, &lm); err != nil {
-				return ErrInvalidLanguageMapping
-			}
-
-			// 22.2)
-			termDef.Language = strings.ToLower(lm)
+			termDef.Language = strings.ToLower(input.Language.Value)
 		}
 	}
 
 	// 23)
-	if dir, ok := valueObj[KeywordDirection]; ok && !hasType {
-		if json.IsNull(dir) {
+	if input.Direction.Set && input.Type == "" {
+		if !input.Direction.Valid {
 			termDef.Direction = KeywordNull
 		} else {
-			var d string
-			// 23.1)
-			if err := json.Unmarshal(dir, &d); err != nil {
-				return ErrInvalidBaseDirection
-			}
-
-			switch d {
+			switch input.Direction.Value {
 			case DirectionLTR, DirectionRTL:
 			default:
 				return ErrInvalidBaseDirection
 			}
-
-			// 23.2)
-			termDef.Direction = d
+			termDef.Direction = input.Direction.Value
 		}
 	}
 
 	// 24)
-	if nest, ok := valueObj[KeywordNest]; ok {
+	if input.Nest != "" {
 		// 24.1)
 		if p.modeLD10 {
 			return ErrInvalidTermDefinition
 		}
 
-		if json.IsNull(nest) {
+		if isKeyword(input.Nest) && input.Nest != KeywordNest {
 			return ErrInvalidNestValue
 		}
-
-		// 24.2)
-		var n string
-		if err := json.Unmarshal(nest, &n); err != nil {
-			return ErrInvalidNestValue
-		}
-
-		if isKeyword(n) && n != KeywordNest {
-			return ErrInvalidNestValue
-		}
-		termDef.Nest = n
+		termDef.Nest = input.Nest
 	}
 
 	// 25)
-	if prefix, ok := valueObj[KeywordPrefix]; ok {
+	if input.Prefix.Set && input.Prefix.Valid {
 		// 25.1)
 		if p.modeLD10 {
 			return ErrInvalidTermDefinition
-		}
-
-		// 25.2)
-		if json.IsNull(prefix) {
-			return ErrInvalidPrefixValue
 		}
 
 		if strings.Contains(term, ":") || strings.Contains(term, "/") {
 			return ErrInvalidTermDefinition
 		}
 
-		var p bool
-		if err := json.Unmarshal(prefix, &p); err != nil {
-			return ErrInvalidPrefixValue
-		}
-
 		// 25.3)
-		if p && isKeyword(termDef.IRI) {
+		if input.Prefix.Value && isKeyword(termDef.IRI) {
 			return ErrInvalidTermDefinition
 		}
 
-		termDef.Prefix = p
+		termDef.Prefix = input.Prefix.Value
 	}
 
 	// 26)
-	valKeys := map[string]struct{}{}
-	for k := range valueObj {
-		valKeys[k] = struct{}{}
-	}
-
-	for _, kw := range []string{KeywordID, KeywordReverse, KeywordContainer,
-		KeywordContext, KeywordDirection, KeywordIndex, KeywordLanguage,
-		KeywordNest, KeywordPrefix, KeywordProtected, KeywordType} {
-		delete(valKeys, kw)
-	}
-
-	if len(valKeys) > 0 {
+	if input.HasUnknownKeys {
 		return ErrInvalidTermDefinition
 	}
 
@@ -716,7 +610,7 @@ func (p *Processor) createTerm(
 	}
 
 	// 28)
-	activeContext.defs[term] = termDef
+	activeCtx.defs[term] = termDef
 	defined[term] = termDefined
 	return nil
 }

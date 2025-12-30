@@ -1,13 +1,14 @@
 package longdistance_test
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	ld "sourcery.dny.nu/longdistance"
-	"sourcery.dny.nu/longdistance/internal/json"
 )
 
 // TestCompact runs the W3C compaction tests.
@@ -306,7 +307,7 @@ func TestCompact(t *testing.T) {
 					ld.WithCompactToRelative(tc.compactToRelative),
 				)
 
-				expanded, err := proc.Expand(src, docIRI)
+				expanded, err := proc.Expand(bytes.NewReader(src), docIRI)
 				if err != nil {
 					t.Fatalf("expected successful expand, got: %s", err)
 				}
@@ -350,7 +351,7 @@ func TestCompact(t *testing.T) {
 					ld.WithCompactToRelative(tc.compactToRelative),
 				)
 
-				expanded, err := proc.Expand(src, docIRI)
+				expanded, err := proc.Expand(bytes.NewReader(src), docIRI)
 				if err != nil {
 					t.Fatalf("expected successful expand, got: %s", err)
 				}

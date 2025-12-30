@@ -1,22 +1,19 @@
-package url
+package iri
 
 import (
 	"fmt"
 	"net/url"
 	"path"
-	"slices"
 	"strings"
 )
 
-var Parse = url.Parse
-
 func Relative(base string, iri string) (string, error) {
-	baseURL, err := Parse(base)
+	baseURL, err := url.Parse(base)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse base URL: %w", err)
 	}
 
-	absURL, err := Parse(iri)
+	absURL, err := url.Parse(iri)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse absolute URL: %w", err)
 	}
@@ -76,42 +73,35 @@ func Relative(base string, iri string) (string, error) {
 }
 
 func EndsInGenDelim(s string) bool {
-	delims := []string{":", "/", "?", "#", "[", "]", "@"}
+	delims := map[string]struct{}{
+		":": {}, "/": {}, "?": {}, "#": {}, "[": {}, "]": {}, "@": {},
+	}
+
 	last := s[len(s)-1:]
-	return slices.Contains(delims, last)
+	_, ok := delims[last]
+	return ok
 }
 
 func IsRelative(s string) bool {
-	_, err := Parse(s)
-	return err == nil
+	u, err := url.Parse(s)
+	return err == nil && !u.IsAbs()
 }
 
-func IsIRI(s string) bool {
-	u, err := Parse(s)
-	if err != nil {
-		return false
-	}
-
-	if !u.IsAbs() {
-		return false
-	}
-
-	ns := u.String()
-	if strings.HasSuffix(s, "#") {
-		// preserve the empty fragment
-		ns = ns + "#"
-	}
-
-	return s == ns
+func IsAbsolute(s string) bool {
+	u, err := url.Parse(s)
+	return err == nil &&
+		u.IsAbs() &&
+		(u.RawPath == "" || u.RawPath == u.EscapedPath()) &&
+		(u.RawFragment == "" || u.RawFragment == u.EscapedFragment())
 }
 
 func Resolve(base string, val string) (string, error) {
-	r, err := Parse(val)
+	r, err := url.Parse(val)
 	if err != nil {
 		return "", err
 	}
 
-	u, err := Parse(base)
+	u, err := url.Parse(base)
 	if err != nil {
 		return "", err
 	}

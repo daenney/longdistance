@@ -1,13 +1,15 @@
 package longdistance
 
 import (
+	"bytes"
 	"cmp"
 	"maps"
+	"net/url"
 	"slices"
 	"strings"
 
+	"sourcery.dny.nu/longdistance/internal/iri"
 	"sourcery.dny.nu/longdistance/internal/json"
-	"sourcery.dny.nu/longdistance/internal/url"
 )
 
 func (p *Processor) compactIRI(
@@ -396,7 +398,7 @@ func (p *Processor) compactIRI(
 
 	// 10)
 	if !vocab && activeContext.currentBaseIRI != "" {
-		res, err := url.Relative(activeContext.currentBaseIRI, key)
+		res, err := iri.Relative(activeContext.currentBaseIRI, key)
 		if err == nil {
 			if looksLikeKeyword(res) {
 				res = "./" + res
@@ -502,7 +504,8 @@ func (p *Processor) Compact(
 	document []Node,
 	documentURL string,
 ) (json.RawMessage, error) {
-	ctx, err := p.context(nil, compactionCtx, documentURL, newCtxProcessingOpts())
+	dec := json.NewDecoder(bytes.NewReader(compactionCtx))
+	ctx, err := p.context(nil, dec, documentURL, newCtxProcessingOpts())
 	if err != nil {
 		return nil, err
 	}
@@ -612,17 +615,18 @@ func (p *Processor) compact(
 	// an array and not an object, and we've already handled the array case.
 
 	// 5)
-	if activeContext.previousContext != nil &&
+	if activeContext.previousCtx != nil &&
 		!object.Has(KeywordValue) &&
 		(!object.Has(KeywordID) || object.Len() > 1) {
-		activeContext = activeContext.previousContext
+		activeContext = activeContext.previousCtx
 	}
 
 	// 6)
 	if activeTermDefinition.Context != nil {
 		opts := newCtxProcessingOpts()
 		opts.override = true
-		nctx, err := p.context(activeContext, activeTermDefinition.Context, activeTermDefinition.BaseIRI, opts)
+		dec := json.NewDecoder(bytes.NewReader(activeTermDefinition.Context))
+		nctx, err := p.context(activeContext, dec, activeTermDefinition.BaseIRI, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -682,9 +686,10 @@ func (p *Processor) compact(
 			if cdef, cok := typeScopedContext.defs[t]; cok && cdef.Context != nil {
 				opts := newCtxProcessingOpts()
 				opts.propagate = false
+				dec := json.NewDecoder(bytes.NewReader(cdef.Context))
 				nctx, err := p.context(
 					activeContext,
-					cdef.Context,
+					dec,
 					cdef.BaseIRI,
 					opts,
 				)

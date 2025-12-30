@@ -3,7 +3,9 @@ package longdistance_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,8 +13,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	ld "sourcery.dny.nu/longdistance"
-	"sourcery.dny.nu/longdistance/internal/json"
-	"sourcery.dny.nu/longdistance/internal/url"
 )
 
 var dump = flag.Bool("dump", false, "dump the compacted or expanded JSON on test failure")
@@ -23,7 +23,7 @@ func ProcessContext(tb testing.TB, lctx json.RawMessage, iri string) *ld.Context
 	tb.Helper()
 	p := ld.NewProcessor()
 
-	ctx, err := p.Context(lctx, iri)
+	ctx, err := p.Context(bytes.NewReader(lctx), iri)
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -97,10 +97,10 @@ func LoadData(t testing.TB, file string) json.RawMessage {
 // JSONDiff should be used when diffing JSON documents.
 func JSONDiff() cmp.Option {
 	return cmp.Options{
-		cmp.FilterValues(func(x, y json.RawMessage) bool {
+		cmp.FilterValues(func(x, y hjson.RawMessage) bool {
 			return json.Valid(x) && json.Valid(y)
-		}, cmp.Transformer("ParseJSON", func(in json.RawMessage) (out any) {
-			if err := json.Unmarshal(in, &out); err != nil {
+		}, cmp.Transformer("ParseJSON", func(in hjson.RawMessage) (out any) {
+			if err := hjson.Unmarshal(in, &out); err != nil {
 				panic(err) // should never occur given previous filter to ensure valid JSON
 			}
 			return out

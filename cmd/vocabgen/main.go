@@ -43,7 +43,7 @@ func main() {
 
 	proc := ld.NewProcessor()
 
-	res, err := proc.Context(rawCtx[ld.KeywordContext], *docIRI)
+	res, err := proc.Context(bytes.NewReader(rawCtx[ld.KeywordContext]), *docIRI)
 	if err != nil {
 		panic(err)
 	}
@@ -138,7 +138,7 @@ func makeTerms(
 		}
 
 		if def.Context != nil {
-			nctx, err := proc.Context(def.Context, documentURL)
+			nctx, err := proc.Context(bytes.NewReader(def.Context), documentURL)
 			if err != nil {
 				panic(err)
 			}
