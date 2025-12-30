@@ -1,17 +1,20 @@
 package longdistance
 
 import (
+	"bytes"
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"iter"
 	"maps"
 	"slices"
 	"strings"
 	"unique"
 
+	"sourcery.dny.nu/longdistance/internal/iri"
 	"sourcery.dny.nu/longdistance/internal/json"
-	"sourcery.dny.nu/longdistance/internal/url"
 )
 
 // RemoteContextLimit is the recursion limit for resolving remote contexts.
@@ -27,7 +30,7 @@ type Context struct {
 	vocabMapping     string
 	defaultLang      string
 	defaultDirection string
-	previousContext  *Context
+	previousCtx      *Context
 	inverse          inverseContext
 }
 
@@ -75,7 +78,7 @@ func (c *Context) clone() *Context {
 		vocabMapping:     c.vocabMapping,
 		defaultLang:      c.defaultLang,
 		defaultDirection: c.defaultDirection,
-		previousContext:  c.previousContext,
+		previousCtx:      c.previousCtx,
 		inverse:          nil,
 	}
 }
@@ -89,24 +92,23 @@ func (c *Context) isBlank() bool {
 
 	return len(c.defs) == 0 &&
 		len(c.protected) == 0 &&
-		c.previousContext == nil &&
+		c.previousCtx == nil &&
 		c.vocabMapping == "" &&
 		c.defaultDirection == "" &&
 		c.defaultLang == "" &&
 		c.inverse == nil
 }
 
-// Context takes in JSON and parses it into a [Context].
-func (p *Processor) Context(localContext json.RawMessage, baseURL string) (*Context, error) {
-	if len(localContext) == 0 {
-		return nil, nil
+// Context takes in [io.Reader] and parses it into a [Context].
+func (p *Processor) Context(ctx io.Reader, baseURL string) (*Context, error) {
+	dec := json.NewDecoder(ctx)
+
+	res, err := p.context(nil, dec, baseURL, newCtxProcessingOpts())
+	if _, derr := dec.Token(); derr != io.EOF {
+		err = errors.Join(derr, fmt.Errorf("trailing garbage in JSON"))
 	}
 
-	if json.IsNull(localContext) {
-		return nil, nil
-	}
-
-	return p.context(nil, localContext, baseURL, newCtxProcessingOpts())
+	return res, err
 }
 
 type ctxProcessingOpts struct {
@@ -124,94 +126,179 @@ func newCtxProcessingOpts() ctxProcessingOpts {
 }
 
 func (p *Processor) context(
-	activeContext *Context,
-	localContext json.RawMessage,
+	activeCtx *Context,
+	ctx *json.Decoder,
 	baseURL string,
 	opts ctxProcessingOpts,
 ) (*Context, error) {
-	if activeContext == nil {
-		activeContext = newContext(baseURL)
+	if activeCtx == nil {
+		activeCtx = newContext(baseURL)
 	}
 
-	activeContext.currentBaseIRI = cmp.Or(
+	activeCtx.currentBaseIRI = cmp.Or(
 		p.baseIRI,
-		activeContext.currentBaseIRI,
+		activeCtx.currentBaseIRI,
 	)
 
 	// 1)
-	result := activeContext.clone()
-
-	// 2)
-	if json.IsMap(localContext) {
-		var propcheck struct {
-			Propagate *bool `json:"@propagate,omitempty"`
-		}
-		if err := json.Unmarshal(localContext, &propcheck); err != nil {
-			return nil, ErrInvalidPropagateValue
-		}
-		if propcheck.Propagate != nil {
-			opts.propagate = *propcheck.Propagate
-		}
+	var result *Context
+	if activeCtx.isBlank() {
+		result = activeCtx
+	} else {
+		result = activeCtx.clone()
 	}
 
-	// 3)
-	if !opts.propagate {
-		if result.previousContext == nil {
-			result.previousContext = activeContext.clone()
-		}
+	tok, err := ctx.Token()
+	if err != nil {
+		return nil, errors.Join(err, ErrInvalidLocalContext)
 	}
 
-	// 4)
-	localContext = json.MakeArray(localContext)
+	finalFunc := func() error { return nil }
 
-	var contexts []json.RawMessage
-	if err := json.Unmarshal(localContext, &contexts); err != nil {
-		return nil, fmt.Errorf("invalid context document")
-	}
-
-	if len(contexts) == 0 {
-		return nil, nil
-	}
-
-	// 5)
-	for _, context := range contexts {
-		// 5.1)
-		switch context[0] {
-		case '[':
-			return nil, ErrInvalidLocalContext
-		case '{':
-			// goes on after the switch
-		default:
-			// 5.1)
-			if json.IsNull(context) {
-				// 5.1.1)
-				if !opts.override && len(result.protected) != 0 {
-					return nil, ErrInvalidContextNullificaton
-				}
-
-				// 5.1.2)
-				previous := result.clone()
-				result = newContext(activeContext.originalBaseIRI)
-				if !opts.propagate {
-					result.previousContext = previous
-				}
-
-				// 5.1.3)
-				continue
+	if delim, ok := tok.(json.Delim); ok && delim == '[' {
+		finalFunc = func() error {
+			_, err = ctx.Token()
+			if err != nil {
+				return errors.Join(err, ErrInvalidLocalContext)
 			}
 
-			var s string
-			if err := json.Unmarshal(context, &s); err != nil {
+			return nil
+		}
+
+		if !ctx.More() {
+			return nil, nil
+		}
+
+		tok, err = ctx.Token()
+		if err != nil {
+			return nil, errors.Join(err, ErrInvalidLocalContext)
+		}
+	}
+
+	first := true
+
+	for {
+		switch t := tok.(type) {
+		case json.Delim:
+			// 5.1) Nested arrays are invalid
+			if t != '{' {
 				return nil, ErrInvalidLocalContext
 			}
 
+			ctxObj, err := p.decodeCtxObj(ctx)
+			if err != nil {
+				return nil, err
+			}
+
+			// 2) Check @propagate on first context
+			if first && ctxObj.Propagate.Set && ctxObj.Propagate.Valid {
+				opts.propagate = ctxObj.Propagate.Value
+			}
+
+			// 3)
+			if !opts.propagate && result.previousCtx == nil {
+				result.previousCtx = activeCtx
+			}
+
+			// 5.5)
+			if ctxObj.Version.Set {
+				if err := p.handleVersion(ctxObj.Version); err != nil {
+					return nil, err
+				}
+			}
+
+			// 5.6)
+			if ctxObj.Import.Set && ctxObj.Import.Valid && ctxObj.Import.Value != "" {
+				imported, err := p.handleImport(baseURL, ctxObj.Import.Value, ctxObj.Terms)
+				if err != nil {
+					return nil, err
+				}
+				ctxObj.Terms = imported
+			}
+
+			// 5.7)
+			if ctxObj.Base.Set && len(opts.remotes) == 0 {
+				if err := p.handleBase(result, ctxObj.Base); err != nil {
+					return nil, err
+				}
+			}
+
+			// 5.8)
+			if ctxObj.Vocab.Set {
+				if err := p.handleVocab(result, ctxObj.Vocab); err != nil {
+					return nil, err
+				}
+			}
+
+			// 5.9)
+			if ctxObj.Lang.Set {
+				if err := p.handleLanguage(result, ctxObj.Lang); err != nil {
+					return nil, err
+				}
+			}
+
+			// 5.10)
+			if ctxObj.Dir.Set {
+				if err := p.handleDirection(result, ctxObj.Dir); err != nil {
+					return nil, err
+				}
+			}
+
+			// 5.11)
+			if ctxObj.Propagate.Set {
+				if err := p.handlePropagate(ctxObj.Propagate); err != nil {
+					return nil, err
+				}
+			}
+
+			protected := false
+			if ctxObj.Protected.Set {
+				if !ctxObj.Protected.Valid {
+					return nil, ErrInvalidProtectedValue
+				}
+				protected = ctxObj.Protected.Value
+			}
+
+			// 5.12)
+			defined := map[string]termState{}
+
+			// 5.13)
+			for k := range ctxObj.Terms {
+				newOpts := newCreateTermOptions()
+				newOpts.baseURL = baseURL
+				newOpts.protected = protected
+				newOpts.override = opts.override
+				newOpts.remotes = slices.Clone(opts.remotes)
+				if err := p.createTerm(
+					result,
+					ctxObj.Terms,
+					k,
+					defined,
+					newOpts,
+				); err != nil {
+					return nil, err
+				}
+			}
+
+		case nil:
+			// 5.1)
+			if !opts.override && len(result.protected) != 0 {
+				return nil, ErrInvalidContextNullificaton
+			}
+
+			previous := result
+			result = newContext(result.originalBaseIRI)
+			if !opts.propagate {
+				result.previousCtx = previous
+			}
+
+		case string:
 			// 5.2)
-			// 5.2.1)
-			if !url.IsIRI(baseURL) && !url.IsIRI(s) {
+			if !iri.IsAbsolute(baseURL) && !iri.IsAbsolute(t) {
 				return nil, ErrLoadingDocument
 			}
 
-			iri, err := url.Resolve(baseURL, s)
+			iri, err := iri.Resolve(baseURL, t)
 			if err != nil {
 				return nil, ErrLoadingDocument
 			}
@@ -230,130 +317,66 @@ func (p *Processor) context(
 			}
 			opts.remotes = append(opts.remotes, iri)
 
+			cached := false
 			if result.isBlank() {
-				if ctx, ok := p.processedContext[iri]; ok {
+				if pctx, ok := p.processedContext[iri]; ok {
 					curIRI := result.currentBaseIRI
 					origIRI := result.originalBaseIRI
-					result = ctx.clone()
+
+					result = pctx.clone()
 					result.currentBaseIRI = curIRI
 					result.originalBaseIRI = origIRI
-					continue
+
+					cached = true
 				}
 			}
 
-			// 5.2.4) 5.2.5)
-			doc, err := p.retrieveRemoteContext(iri)
-			if err != nil {
-				return nil, err
-			}
-
-			// 5.2.6)
-			newOpts := newCtxProcessingOpts()
-			newOpts.remotes = slices.Clone(opts.remotes)
-			newOpts.validate = opts.validate
-			res, err := p.context(
-				result,
-				doc.Context,
-				doc.URL,
-				newOpts,
-			)
-			if err != nil {
-				return nil, err
-			}
-			result = res
-			continue
-		}
-
-		// 5.3)
-		var ctxObj map[string]json.RawMessage
-		if err := json.Unmarshal(context, &ctxObj); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal context: %s %w", err, ErrInvalidLocalContext)
-		}
-
-		// 5.5)
-		if version, ok := ctxObj[KeywordVersion]; ok {
-			if err := p.handleVersion(version); err != nil {
-				return nil, err
-			}
-		}
-
-		// 5.6)
-		if imp, ok := ctxObj[KeywordImport]; ok {
-			res, err := p.handleImport(baseURL, imp, ctxObj)
-			if err != nil {
-				return nil, err
-			}
-			ctxObj = res
-		}
-
-		// 5.7)
-		if base, ok := ctxObj[KeywordBase]; ok && len(opts.remotes) == 0 {
-			if err := p.handleBase(result, base); err != nil {
-				return nil, err
-			}
-		}
-
-		// 5.8)
-		if vocab, ok := ctxObj[KeywordVocab]; ok {
-			if err := p.handleVocab(result, vocab); err != nil {
-				return nil, err
-			}
-		}
-
-		// 5.9)
-		if lang, ok := ctxObj[KeywordLanguage]; ok {
-			if err := p.handleLanguage(result, lang); err != nil {
-				return nil, err
-			}
-		}
-
-		// 5.10)
-		if dir, ok := ctxObj[KeywordDirection]; ok {
-			if err := p.handleDirection(result, dir); err != nil {
-				return nil, err
-			}
-		}
-
-		// 5.11)
-		if prop, ok := ctxObj[KeywordPropagate]; ok {
-			if err := p.handlePropagate(prop); err != nil {
-				return nil, err
-			}
-		}
-
-		protected := false
-		if prot, ok := ctxObj[KeywordProtected]; ok && !json.IsNull(prot) {
-			if err := json.Unmarshal(prot, &protected); err != nil {
-				return nil, ErrInvalidProtectedValue
-			}
-		}
-
-		// 5.12)
-		defined := map[string]termState{}
-
-		// 5.13)
-		for k := range ctxObj {
-			switch k {
-			case KeywordBase, KeywordDirection, KeywordImport,
-				KeywordLanguage, KeywordPropagate, KeywordProtected,
-				KeywordVersion, KeywordVocab:
-			default:
-				newOpts := newCreateTermOptions()
-				newOpts.baseURL = baseURL
-				newOpts.protected = protected
-				newOpts.override = opts.override
-				newOpts.remotes = slices.Clone(opts.remotes)
-				if err := p.createTerm(
-					result,
-					ctxObj,
-					k,
-					defined,
-					newOpts,
-				); err != nil {
+			if !cached {
+				// 5.2.4) 5.2.5)
+				doc, err := p.retrieveRemoteContext(iri)
+				if err != nil {
 					return nil, err
 				}
+
+				// 5.2.6)
+				newOpts := newCtxProcessingOpts()
+				newOpts.remotes = slices.Clone(opts.remotes)
+				newOpts.validate = opts.validate
+				remoteDec := json.NewDecoder(bytes.NewReader(doc.Context))
+				res, err := p.context(
+					result,
+					remoteDec,
+					doc.URL,
+					newOpts,
+				)
+				if err != nil {
+					return nil, err
+				}
+
+				result = res
 			}
+		default:
+			return nil, ErrInvalidLocalContext
 		}
+
+		first = false
+
+		if !ctx.More() {
+			break
+		}
+
+		tok, err = ctx.Token()
+		if err != nil {
+			return nil, errors.Join(err, ErrInvalidLocalContext)
+		}
+	}
+
+	if err := finalFunc(); err != nil {
+		return nil, err
+	}
+
+	if first {
+		return nil, nil
 	}
 
 	if f := p.validateContextFunc; f != nil && !f(result) {
@@ -363,81 +386,288 @@ func (p *Processor) context(
 	return result, nil
 }
 
-func (p *Processor) handlePropagate(prop json.RawMessage) error {
-	if p.modeLD10 {
-		return ErrInvalidContextEntry
+type null[T any] struct {
+	Set   bool
+	Valid bool
+	Value T
+}
+
+func (n *null[T]) UnmarshalJSON(data []byte) error {
+	n.Set = true
+	if json.IsNull(data) {
+		return nil
 	}
 
-	if json.IsNull(prop) {
-		return ErrInvalidPropagateValue
+	var zero T
+	if err := json.Unmarshal(data, &zero); err != nil {
+		return err
 	}
 
-	var b bool
-	if err := json.Unmarshal(prop, &b); err != nil {
+	n.Valid = true
+	n.Value = zero
+	return nil
+}
+
+// contextObj is a decoded context, before term processing takes place. This
+// lets us process the context once, avoiding lookups into the JSON during term
+// creation because we need to support forward resolution of terms.
+type contextObj struct {
+	Version   null[float64]
+	Import    null[string]
+	Base      null[string]
+	Vocab     null[string]
+	Lang      null[string]
+	Dir       null[string]
+	Propagate null[bool]
+	Protected null[bool]
+	Terms     map[string]term
+}
+
+func (p *Processor) decodeCtxObj(dec *json.Decoder) (*contextObj, error) {
+	obj := &contextObj{
+		Terms: make(map[string]term),
+	}
+
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, errors.Join(err, ErrInvalidLocalContext)
+		}
+
+		key, ok := tok.(string)
+		if !ok {
+			return nil, ErrInvalidLocalContext
+		}
+
+		switch key {
+		case KeywordVersion:
+			if p.modeLD10 {
+				return nil, ErrProcessingMode
+			}
+
+			if err := dec.Decode(&obj.Version); err != nil {
+				return nil, errors.Join(err, ErrInvalidVersionValue)
+			}
+		case KeywordImport:
+			if err := dec.Decode(&obj.Import); err != nil {
+				return nil, errors.Join(err, ErrInvalidImportValue)
+			}
+		case KeywordBase:
+			if err := dec.Decode(&obj.Base); err != nil {
+				return nil, errors.Join(err, ErrInvalidBaseIRI)
+			}
+		case KeywordVocab:
+			if err := dec.Decode(&obj.Vocab); err != nil {
+				return nil, errors.Join(err, ErrInvalidVocabMapping)
+			}
+		case KeywordLanguage:
+			if err := dec.Decode(&obj.Lang); err != nil {
+				return nil, errors.Join(err, ErrInvalidDefaultLanguage)
+			}
+		case KeywordDirection:
+			if p.modeLD10 {
+				return nil, ErrInvalidContextEntry
+			}
+
+			if err := dec.Decode(&obj.Dir); err != nil {
+				return nil, errors.Join(err, ErrInvalidBaseDirection)
+			}
+		case KeywordPropagate:
+			if p.modeLD10 {
+				return nil, ErrInvalidContextEntry
+			}
+
+			if err := dec.Decode(&obj.Propagate); err != nil {
+				return nil, errors.Join(err, ErrInvalidPropagateValue)
+			}
+		case KeywordProtected:
+			if err := dec.Decode(&obj.Protected); err != nil {
+				return nil, errors.Join(err, ErrInvalidProtectedValue)
+			}
+		default:
+			input, err := p.decodeTerm(dec)
+			if err != nil {
+				return nil, err
+			}
+			obj.Terms[key] = input
+		}
+	}
+
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, errors.Join(err, ErrInvalidLocalContext)
+	}
+
+	if delim, ok := tok.(json.Delim); !ok || delim != '}' {
+		return nil, ErrInvalidLocalContext
+	}
+
+	return obj, nil
+}
+
+func (p *Processor) decodeTerm(dec *json.Decoder) (term, error) {
+	tok, err := dec.Token()
+	if err != nil {
+		return term{}, err
+	}
+
+	switch t := tok.(type) {
+	case nil:
+		return term{Null: true, ID: null[string]{Set: true}}, nil
+	case string:
+		return term{Simple: true, ID: null[string]{Set: true, Valid: true, Value: t}}, nil
+	case json.Delim:
+		if t != '{' {
+			return term{}, ErrInvalidTermDefinition
+		}
+		return p.decodeTermObj(dec)
+	default:
+		return term{}, ErrInvalidTermDefinition
+	}
+}
+
+func (p *Processor) decodeTermObj(dec *json.Decoder) (term, error) {
+	var input term
+
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return input, err
+		}
+
+		key, ok := tok.(string)
+		if !ok {
+			return input, ErrInvalidTermDefinition
+		}
+
+		switch key {
+		case KeywordID:
+			if err := dec.Decode(&input.ID); err != nil {
+				return input, ErrInvalidIRIMapping
+			}
+		case KeywordType:
+			if err := dec.Decode(&input.Type); err != nil {
+				return input, ErrInvalidTypeMapping
+			}
+		case KeywordReverse:
+			if err := dec.Decode(&input.Reverse); err != nil {
+				return input, ErrInvalidIRIMapping
+			}
+		case KeywordContainer:
+			if p.modeLD10 {
+				// In LD 1.0 it must be a string and only a string
+				var s string
+				if err := dec.Decode(&s); err != nil {
+					return input, ErrInvalidContainerMapping
+				}
+
+				input.Container = null[array[string]]{
+					Set:   true,
+					Valid: true,
+					Value: []string{s},
+				}
+
+				continue
+			}
+
+			if err := dec.Decode(&input.Container); err != nil {
+				return input, ErrInvalidContainerMapping
+			}
+		case KeywordIndex:
+			if err := dec.Decode(&input.Index); err != nil {
+				return input, ErrInvalidTermDefinition
+			}
+		case KeywordContext:
+			if err := dec.Decode(&input.Context); err != nil {
+				return input, ErrInvalidScopedContext
+			}
+		case KeywordLanguage:
+			if err := dec.Decode(&input.Language); err != nil {
+				return input, ErrInvalidLanguageMapping
+			}
+		case KeywordDirection:
+			if err := dec.Decode(&input.Direction); err != nil {
+				return input, ErrInvalidBaseDirection
+			}
+		case KeywordNest:
+			if err := dec.Decode(&input.Nest); err != nil {
+				return input, ErrInvalidNestValue
+			}
+		case KeywordPrefix:
+			if err := dec.Decode(&input.Prefix); err != nil {
+				return input, ErrInvalidPrefixValue
+			}
+		case KeywordProtected:
+			if err := dec.Decode(&input.Protected); err != nil {
+				return input, ErrInvalidProtectedValue
+			}
+		default:
+			if _, err := dec.Token(); err != nil {
+				return input, err
+			}
+			input.HasUnknownKeys = true
+		}
+	}
+
+	tok, err := dec.Token()
+	if err != nil {
+		return input, err
+	}
+
+	if delim, ok := tok.(json.Delim); !ok || delim != '}' {
+		return input, ErrInvalidTermDefinition
+	}
+
+	return input, nil
+}
+
+func (p *Processor) handlePropagate(prop null[bool]) error {
+	if !prop.Valid {
 		return ErrInvalidPropagateValue
 	}
 
 	return nil
 }
 
-func (p *Processor) handleDirection(result *Context, dir json.RawMessage) error {
-	if p.modeLD10 {
-		return ErrInvalidContextEntry
-	}
-
-	if json.IsNull(dir) {
+func (p *Processor) handleDirection(result *Context, dir null[string]) error {
+	if !dir.Valid {
 		result.defaultDirection = ""
 		return nil
 	}
 
-	var d string
-	if err := json.Unmarshal(dir, &d); err != nil {
-		return ErrInvalidBaseDirection
-	}
-
-	switch d {
+	switch dir.Value {
 	case DirectionLTR, DirectionRTL:
 	default:
 		return ErrInvalidBaseDirection
 	}
 
-	result.defaultDirection = d
+	result.defaultDirection = dir.Value
 	return nil
 }
 
-func (p *Processor) handleLanguage(result *Context, lang json.RawMessage) error {
-	if json.IsNull(lang) {
+func (p *Processor) handleLanguage(result *Context, lang null[string]) error {
+	if !lang.Valid {
 		result.defaultLang = ""
 		return nil
 	}
 
-	var l string
-	if err := json.Unmarshal(lang, &l); err != nil {
-		return ErrInvalidDefaultLanguage
-	}
-
-	result.defaultLang = strings.ToLower(l)
+	result.defaultLang = strings.ToLower(lang.Value)
 	return nil
 }
 
-func (p *Processor) handleVocab(result *Context, vocab json.RawMessage) error {
+func (p *Processor) handleVocab(result *Context, vocab null[string]) error {
 	// 5.8.2)
-	if json.IsNull(vocab) {
+	if !vocab.Valid {
 		result.vocabMapping = ""
 		return nil
 	}
 
-	var s string
-	if err := json.Unmarshal(vocab, &s); err != nil {
-		return ErrInvalidVocabMapping
-	}
-
 	// 5.8.3)
-	if !(url.IsIRI(s) || url.IsRelative(s) || s == BlankNode) {
+	if !(iri.IsAbsolute(vocab.Value) || iri.IsRelative(vocab.Value) || vocab.Value == BlankNode) {
 		return ErrInvalidVocabMapping
 	}
 
-	u, err := p.expandIRI(result, s, true, true, nil, nil)
+	u, err := p.expandIRI(result, vocab.Value, true, true, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -446,27 +676,22 @@ func (p *Processor) handleVocab(result *Context, vocab json.RawMessage) error {
 	return nil
 }
 
-func (p *Processor) handleBase(result *Context, base json.RawMessage) error {
+func (p *Processor) handleBase(result *Context, base null[string]) error {
 	// 5.7.2)
-	if json.IsNull(base) {
+	if !base.Valid {
 		result.currentBaseIRI = ""
 		return nil
 	}
 
-	var iri string
-	if err := json.Unmarshal(base, &iri); err != nil {
-		return ErrInvalidBaseIRI
-	}
-
 	// 5.7.3)
-	if url.IsIRI(iri) {
-		result.currentBaseIRI = iri
+	if iri.IsAbsolute(base.Value) {
+		result.currentBaseIRI = base.Value
 		return nil
 	}
 
 	// 5.7.4)
-	if url.IsRelative(iri) {
-		u, err := url.Resolve(result.currentBaseIRI, iri)
+	if iri.IsRelative(base.Value) {
+		u, err := iri.Resolve(result.currentBaseIRI, base.Value)
 		if err != nil {
 			return ErrInvalidBaseIRI
 		}
@@ -478,20 +703,14 @@ func (p *Processor) handleBase(result *Context, base json.RawMessage) error {
 	return ErrInvalidBaseIRI
 }
 
-func (p *Processor) handleImport(baseURL string, data json.RawMessage, context map[string]json.RawMessage) (map[string]json.RawMessage, error) {
+func (p *Processor) handleImport(baseURL string, uri string, terms map[string]term) (map[string]term, error) {
 	// 5.6.1)
 	if p.modeLD10 {
 		return nil, ErrInvalidContextEntry
 	}
 
-	// 5.6.2)
-	var val string
-	if err := json.Unmarshal(data, &val); err != nil {
-		return nil, ErrInvalidImportValue
-	}
-
 	// 5.6.3)
-	iri, err := url.Resolve(baseURL, val)
+	iri, err := iri.Resolve(baseURL, uri)
 	if err != nil {
 		return nil, ErrInvalidRemoteContext
 	}
@@ -502,32 +721,69 @@ func (p *Processor) handleImport(baseURL string, data json.RawMessage, context m
 		return nil, err
 	}
 
-	// 5.6.6)
-	var ctxObj map[string]json.RawMessage
-	if err := json.Unmarshal(res.Context, &ctxObj); err != nil {
+	if !json.IsMap(res.Context) {
 		return nil, ErrInvalidRemoteContext
 	}
 
-	// 5.6.7)
-	if _, ok := ctxObj[KeywordImport]; ok {
-		return nil, ErrInvalidContextEntry
+	dec := json.NewDecoder(bytes.NewReader(res.Context))
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, ErrInvalidRemoteContext
+	}
+	if delim, ok := tok.(json.Delim); !ok || delim != '{' {
+		return nil, ErrInvalidRemoteContext
 	}
 
-	maps.Copy(ctxObj, context)
-	return ctxObj, nil
+	importedTerms := make(map[string]term)
+
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, ErrInvalidRemoteContext
+		}
+
+		key, ok := tok.(string)
+		if !ok {
+			return nil, ErrInvalidRemoteContext
+		}
+
+		// 5.6.7) Check for nested @import
+		if key == KeywordImport {
+			return nil, ErrInvalidContextEntry
+		}
+
+		switch key {
+		case KeywordVersion, KeywordBase, KeywordVocab,
+			KeywordLanguage, KeywordDirection, KeywordPropagate, KeywordProtected:
+			if _, err := dec.Token(); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		input, err := p.decodeTerm(dec)
+		if err != nil {
+			return nil, err
+		}
+		importedTerms[key] = input
+	}
+
+	if _, err := dec.Token(); err != nil {
+		return nil, ErrInvalidRemoteContext
+	}
+
+	for k, v := range terms {
+		importedTerms[k] = v
+	}
+
+	return importedTerms, nil
 }
 
-func (p *Processor) handleVersion(data json.RawMessage) error {
-	var ver float64
-	if err := json.Unmarshal(data, &ver); err != nil {
+func (p *Processor) handleVersion(ver null[float64]) error {
+	if ver.Value != 1.1 {
 		return ErrInvalidVersionValue
 	}
-	if ver != 1.1 {
-		return ErrInvalidVersionValue
-	}
-	if p.modeLD10 {
-		return ErrProcessingMode
-	}
+
 	return nil
 }
 

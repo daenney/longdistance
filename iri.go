@@ -1,19 +1,18 @@
 package longdistance
 
 import (
-	"encoding/json"
 	"log/slog"
 	"strings"
 
-	"sourcery.dny.nu/longdistance/internal/url"
+	"sourcery.dny.nu/longdistance/internal/iri"
 )
 
 func (p *Processor) expandIRI(
-	activeContext *Context,
+	activeCtx *Context,
 	value string,
 	relative bool,
 	vocab bool,
-	localContext map[string]json.RawMessage,
+	localCtx map[string]term,
 	defined map[string]termState,
 ) (string, error) {
 	// 1)
@@ -30,15 +29,15 @@ func (p *Processor) expandIRI(
 		return "", nil
 	}
 
-	hasLocal := len(localContext) > 0
+	hasLocal := len(localCtx) > 0
 
 	// 3)
 	if hasLocal {
-		if _, ok := localContext[value]; ok {
+		if _, ok := localCtx[value]; ok {
 			if state := defined[value]; state != termDefined {
 				if err := p.createTerm(
-					activeContext,
-					localContext,
+					activeCtx,
+					localCtx,
 					value,
 					defined,
 					newCreateTermOptions(),
@@ -50,8 +49,8 @@ func (p *Processor) expandIRI(
 	}
 
 	// 4) 5)
-	if activeContext != nil {
-		if t, ok := activeContext.defs[value]; ok {
+	if activeCtx != nil {
+		if t, ok := activeCtx.defs[value]; ok {
 			if isKeyword(t.IRI) || vocab {
 				return t.IRI, nil
 			}
@@ -70,11 +69,11 @@ func (p *Processor) expandIRI(
 
 			// 6.3)
 			if hasLocal {
-				if _, ok := localContext[prefix]; ok {
+				if _, ok := localCtx[prefix]; ok {
 					if state := defined[prefix]; state != termDefined {
 						if err := p.createTerm(
-							activeContext,
-							localContext,
+							activeCtx,
+							localCtx,
 							prefix,
 							defined,
 							newCreateTermOptions(),
@@ -86,14 +85,14 @@ func (p *Processor) expandIRI(
 			}
 
 			// 6.4)
-			if activeContext != nil {
-				if t, ok := activeContext.defs[prefix]; ok && t.IRI != "" && t.Prefix {
+			if activeCtx != nil {
+				if t, ok := activeCtx.defs[prefix]; ok && t.IRI != "" && t.Prefix {
 					return t.IRI + suffix, nil
 				}
 			}
 
 			// 6.5)
-			if url.IsIRI(value) {
+			if iri.IsAbsolute(value) {
 				return value, nil
 			}
 		}
@@ -101,17 +100,17 @@ func (p *Processor) expandIRI(
 
 	// 7)
 	if vocab {
-		if activeContext.vocabMapping != "" {
-			return activeContext.vocabMapping + value, nil
+		if activeCtx.vocabMapping != "" {
+			return activeCtx.vocabMapping + value, nil
 		}
 	}
 
 	// 8)
 	if relative {
-		if activeContext.currentBaseIRI == "" {
+		if activeCtx.currentBaseIRI == "" {
 			return value, nil
 		}
-		u, err := url.Resolve(activeContext.currentBaseIRI, value)
+		u, err := iri.Resolve(activeCtx.currentBaseIRI, value)
 		if err != nil {
 			return "", err
 		}

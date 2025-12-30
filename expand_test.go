@@ -1,6 +1,8 @@
 package longdistance_test
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -8,7 +10,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	ld "sourcery.dny.nu/longdistance"
-	"sourcery.dny.nu/longdistance/internal/json"
 )
 
 // TestExpand runs the W3C expansion tests.
@@ -447,7 +448,7 @@ func TestExpand(t *testing.T) {
 					ld.WithLogger(slog.New(slog.DiscardHandler)),
 				)
 
-				expanded, err := p.Expand(input, docIRI)
+				expanded, err := p.Expand(bytes.NewReader(input), docIRI)
 
 				if tc.err != "" && err == nil {
 					t.Fatalf("expected error: %s, got nil", tc.err)
@@ -497,7 +498,7 @@ func TestExpand(t *testing.T) {
 					ld.WithLogger(slog.New(slog.DiscardHandler)),
 				)
 
-				expanded, err := p.Expand(input, docIRI)
+				expanded, err := p.Expand(bytes.NewReader(input), docIRI)
 
 				if tc.err != "" && err == nil {
 					t.Fatalf("expected error: %s, got nil", tc.err)
