@@ -1,6 +1,7 @@
 package longdistance
 
 import (
+	"bytes"
 	"fmt"
 
 	"sourcery.dny.nu/longdistance/internal/json"
@@ -21,7 +22,7 @@ func Example() {
 		"type": "https://example.org/type"
 	}`)
 
-	doc, err := p.Expand(incoming, "")
+	doc, err := p.Expand(bytes.NewReader(incoming), "")
 	if err != nil {
 		panic(err)
 	}

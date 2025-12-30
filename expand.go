@@ -3,14 +3,17 @@ package longdistance
 import (
 	"bytes"
 	"cmp"
+	"errors"
+	"fmt"
+	"io"
 	"iter"
 	"log/slog"
 	"maps"
 	"slices"
 	"strings"
 
+	"sourcery.dny.nu/longdistance/internal/iri"
 	"sourcery.dny.nu/longdistance/internal/json"
-	"sourcery.dny.nu/longdistance/internal/url"
 )
 
 type expandOptions struct {
@@ -30,7 +33,7 @@ func (e expandOptions) withoutFromMap() expandOptions {
 //
 // If the document was retrieved from a URL, pass it as the second argument.
 // Otherwise an empty string.
-func (p *Processor) Expand(document json.RawMessage, url string) ([]Node, error) {
+func (p *Processor) Expand(document io.Reader, url string) ([]Node, error) {
 	opts := expandOptions{ordered: p.ordered}
 	baseIRI := cmp.Or(p.baseIRI, url)
 
@@ -51,13 +54,20 @@ func (p *Processor) Expand(document json.RawMessage, url string) ([]Node, error)
 		}
 
 		var err error
-		ctx, err = p.context(nil, rawctx, "", newCtxProcessingOpts())
+		dec := json.NewDecoder(bytes.NewReader(rawctx))
+		ctx, err = p.context(nil, dec, "", newCtxProcessingOpts())
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	res, err := p.expand(ctx, "", document, url, opts)
+	dec := json.NewDecoder(document)
+	res, err := p.expand(ctx, "", dec, url, opts)
+
+	if _, derr := dec.Token(); derr != io.EOF {
+		err = errors.Join(err, fmt.Errorf("trailing garbage in JSON"))
+	}
+
 	if err != nil {
 		return res, err
 	}
@@ -92,19 +102,14 @@ func (p *Processor) Expand(document json.RawMessage, url string) ([]Node, error)
 }
 
 func (p *Processor) expand(
-	activeContext *Context,
-	activeProperty string,
-	element json.RawMessage,
+	activeCtx *Context,
+	activeProp string,
+	dec *json.Decoder,
 	baseURL string,
 	opts expandOptions,
 ) ([]Node, error) {
-	// 1)
-	if len(element) == 0 || json.IsNull(element) {
-		return nil, nil
-	}
-
 	// 2)
-	if activeProperty == KeywordDefault {
+	if activeProp == KeywordDefault {
 		opts.frameExpansion = false
 	}
 
@@ -113,125 +118,212 @@ func (p *Processor) expand(
 		return nil, ErrFrameExpansionUnsupported
 	}
 
-	termDef := activeContext.defs[activeProperty]
+	termDef := activeCtx.defs[activeProp]
 
 	// 3)
 	// If there was no term definition, then .Context is nil.
 	propContext := termDef.Context
 
-	switch element[0] { // null was handled at the function start
-	case '[':
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+
+	// Handle based on token type
+	switch t := tok.(type) {
+	case nil:
+		// 1)
+		return nil, nil
+	case json.Delim:
 		// 5)
-		var elems json.Array
-		if err := json.Unmarshal(element, &elems); err != nil {
-			return nil, err
+		if t == '[' {
+			// array expansion
+			return p.expandArray(activeCtx, activeProp, dec, baseURL, opts, termDef)
 		}
 
-		if len(elems) == 0 {
-			if slices.Contains(termDef.Container, KeywordList) {
-				return []Node{{List: []Node{}}}, nil
-			}
-			return make([]Node, 0), nil
+		if t == '{' {
+			// object expansion
+			return p.expandObject(activeCtx, activeProp, dec, baseURL, opts, termDef, propContext)
 		}
 
-		// 5.1)
-		result := make([]Node, 0, len(elems))
-
-		// 5.2)
-		for _, elem := range elems {
-			// 5.2.1)
-			res, err := p.expand(
-				activeContext,
-				activeProperty,
-				elem,
-				baseURL,
-				opts,
-			)
-			if err != nil {
-				return nil, err
-			}
-
-			// 5.2.3)
-			if !slices.Contains(termDef.Container, KeywordList) {
-				result = append(result, res...)
-				continue
-			}
-
-			// 5.2.2)
-			if len(elems) > 1 {
-				if len(result) == 0 {
-					result = append(result, Node{List: res})
-				} else {
-					result[0].List = append(result[0].List, res...)
-				}
-			} else {
-				if json.IsMap(elem) && len(res[0].List) != 0 {
-					result = append(result, res...)
-				} else {
-					result = append(result, Node{List: res})
-				}
-			}
-		}
-
-		// 5.3)
-		return result, nil
-	case '{':
-		// happens after the switch
+		return nil, ErrInvalidLocalContext
 	default:
-		// 4)
-		// 4.1)
-		if activeProperty == "" || activeProperty == KeywordGraph {
+		// 4) scalar (string, number, or boolean)
+		if activeProp == "" || activeProp == KeywordGraph {
 			return nil, nil
 		}
 
-		// 4.2)
 		if propContext != nil {
-			nctx, err := p.context(
-				activeContext,
-				propContext,
-				termDef.BaseIRI,
-				newCtxProcessingOpts(),
-			)
+			ctxDec := json.NewDecoder(bytes.NewReader(propContext))
+			nctx, err := p.context(activeCtx, ctxDec, termDef.BaseIRI, newCtxProcessingOpts())
 			if err != nil {
 				return nil, err
 			}
-			activeContext = nctx
+			activeCtx = nctx
 		}
 
-		// 4.3)
-		res, err := p.expandValue(
-			activeContext,
-			activeProperty,
-			element,
-		)
+		res, err := p.expandValue(activeCtx, activeProp, tok)
 		if err != nil {
 			return nil, err
 		}
 		return []Node{res}, nil
 	}
+}
 
-	// 6)
-	var elemObj json.Object
-	if err := json.Unmarshal(element, &elemObj); err != nil {
+func (p *Processor) expandArray(
+	activeCtx *Context,
+	activeProp string,
+	dec *json.Decoder,
+	baseURL string,
+	opts expandOptions,
+	termDef Term,
+) ([]Node, error) {
+	if !dec.More() {
+		if _, err := dec.Token(); err != nil {
+			return nil, err
+		}
+
+		if slices.Contains(termDef.Container, KeywordList) {
+			return []Node{{List: []Node{}}}, nil
+		}
+
+		return []Node{}, nil
+	}
+
+	// 5.1)
+	result := make([]Node, 0, 8)
+	first := true
+
+	// 5.2)
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+
+		var res []Node
+		isMap := false
+
+		switch t := tok.(type) {
+		case json.Delim:
+			switch t {
+			case '{':
+				isMap = true
+				res, err = p.expandObject(activeCtx, activeProp, dec, baseURL, opts, termDef, termDef.Context)
+			case '[':
+				res, err = p.expandArray(activeCtx, activeProp, dec, baseURL, opts, termDef)
+			default:
+				return nil, ErrInvalidLocalContext
+			}
+		case nil:
+			res = nil
+		default:
+			if activeProp != "" && activeProp != KeywordGraph {
+				ctx := activeCtx
+
+				if termDef.Context != nil {
+					ctxDec := json.NewDecoder(bytes.NewReader(termDef.Context))
+					ctx, err = p.context(ctx, ctxDec, termDef.BaseIRI, newCtxProcessingOpts())
+					if err != nil {
+						return nil, err
+					}
+				}
+
+				node, err := p.expandValue(ctx, activeProp, tok)
+				if err != nil {
+					return nil, err
+				}
+
+				res = []Node{node}
+			}
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		// 5.2.3)
+		if !slices.Contains(termDef.Container, KeywordList) {
+			result = append(result, res...)
+			first = false
+			continue
+		}
+
+		// 5.2.2)
+		if first {
+			if isMap && len(res) == 1 && len(res[0].List) > 0 {
+				result = res
+			} else {
+				result = append(result, Node{List: res})
+			}
+			first = false
+		} else {
+			result[0].List = append(result[0].List, res...)
+		}
+	}
+
+	if _, err := dec.Token(); err != nil {
+		return nil, err
+	}
+
+	// 5.3)
+	return result, nil
+}
+
+func (p *Processor) expandRaw(
+	activeCtx *Context,
+	activeProp string,
+	value json.RawMessage,
+	baseURL string,
+	opts expandOptions,
+) ([]Node, error) {
+	if len(value) == 0 || json.IsNull(value) {
+		return nil, nil
+	}
+
+	return p.expand(activeCtx, activeProp, json.NewDecoder(bytes.NewReader(value)), baseURL, opts)
+}
+
+func (p *Processor) expandObject(
+	activeCtx *Context,
+	activeProp string,
+	dec *json.Decoder,
+	baseURL string,
+	opts expandOptions,
+	termDef Term,
+	propContext json.RawMessage,
+) ([]Node, error) {
+	// this is a bit unfortunate, but we have to go through all keys in the
+	// object for the @value/@type lookup after. We can't avoid collecting
+	// everything here.
+	obj := make(json.Object, 8)
+
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+
+		key := tok.(string)
+
+		var value json.RawMessage
+		if err := dec.Decode(&value); err != nil {
+			return nil, err
+		}
+
+		obj[key] = value
+	}
+
+	if _, err := dec.Token(); err != nil {
 		return nil, err
 	}
 
 	// 7)
-	if activeContext.previousContext != nil && !opts.fromMap {
-		elemKeys := maps.Keys(elemObj)
-
-		hasValue := p.expandsToKeyword(
-			activeContext,
-			KeywordValue,
-			elemKeys,
-		)
-		hasID := p.expandsToKeyword(
-			activeContext,
-			KeywordID,
-			elemKeys,
-		)
-		if !hasValue && !(len(elemObj) == 1 && hasID) {
-			activeContext = activeContext.previousContext
+	if activeCtx.previousCtx != nil && !opts.fromMap {
+		hasValue := p.expandsToKeyword(activeCtx, KeywordValue, maps.Keys(obj))
+		hasID := p.expandsToKeyword(activeCtx, KeywordID, maps.Keys(obj))
+		if !hasValue && !(len(obj) == 1 && hasID) {
+			activeCtx = activeCtx.previousCtx
 		}
 	}
 
@@ -239,119 +331,93 @@ func (p *Processor) expand(
 	if propContext != nil {
 		ropts := newCtxProcessingOpts()
 		ropts.override = true
-		nctx, err := p.context(
-			activeContext,
-			propContext,
-			termDef.BaseIRI,
-			ropts,
-		)
+		nctx, err := p.context(activeCtx, json.NewDecoder(bytes.NewReader(propContext)), termDef.BaseIRI, ropts)
 		if err != nil {
 			return nil, err
 		}
-		activeContext = nctx
+
+		activeCtx = nctx
 	}
 
 	// 9)
-	if ctx, ok := elemObj[KeywordContext]; ok {
-		nctx, err := p.context(
-			activeContext,
-			ctx,
-			baseURL,
-			newCtxProcessingOpts(),
-		)
+	if rawCtx, ok := obj[KeywordContext]; ok {
+		nctx, err := p.context(activeCtx, json.NewDecoder(bytes.NewReader(rawCtx)), baseURL, newCtxProcessingOpts())
 		if err != nil {
 			return nil, err
 		}
-		activeContext = nctx
+
+		activeCtx = nctx
 	}
 
 	// 10)
-	typContext := activeContext
+	typContext := activeCtx
 
-	// 11)
-	objKeys := slices.Collect(maps.Keys(elemObj))
-	slices.Sort(objKeys)
-
-	var typeKey string
-	var stringTerms []string
-
-	for _, k := range objKeys {
-		u, err := p.expandIRI(activeContext, k, false, true, nil, nil)
+	// 11) Find @type key and process type-scoped contexts
+	var typeVal json.RawMessage
+	for k, v := range obj {
+		u, err := p.expandIRI(activeCtx, k, false, true, nil, nil)
 		if err != nil {
-			return nil, err
-		}
-
-		if u != KeywordType {
 			continue
 		}
-
-		typeKey = k
-
-		val := json.MakeArray(elemObj[k])
-		var values []json.RawMessage
-		if err := json.Unmarshal(val, &values); err != nil {
-			return nil, err
+		if u == KeywordType {
+			typeVal = v
+			break
 		}
+	}
 
-		stringTerms = make([]string, 0, len(values))
-		for _, term := range values {
-			var s string
-			if err := json.Unmarshal(term, &s); err != nil {
-				return nil, ErrInvalidTypeValue
-			}
-			stringTerms = append(stringTerms, s)
+	var stringTerms []string
+	if len(typeVal) > 0 {
+		if err := json.Unmarshal(json.MakeArray(typeVal), &stringTerms); err != nil {
+			return nil, ErrInvalidTypeValue
 		}
 
 		slices.Sort(stringTerms)
 
 		for _, term := range stringTerms {
 			if tscopeDef, ok := typContext.defs[term]; ok && tscopeDef.Context != nil {
-				adef := activeContext.defs[term]
+				adef := activeCtx.defs[term]
 				ropts := newCtxProcessingOpts()
 				ropts.propagate = false
-				nctx, err := p.context(
-					activeContext,
-					tscopeDef.Context,
-					adef.BaseIRI,
-					ropts,
-				)
+
+				nctx, err := p.context(activeCtx, json.NewDecoder(bytes.NewReader(tscopeDef.Context)), adef.BaseIRI, ropts)
 				if err != nil {
 					return nil, err
 				}
-				activeContext = nctx
+
+				activeCtx = nctx
 			}
 		}
-
-		break
 	}
 
 	// 12)
 	result := &Node{
-		Properties: make(Properties, len(objKeys)),
+		Properties: make(Properties, len(obj)),
 	}
+
 	nests := Properties{}
 
 	var inputType string
-
-	if typeKey != "" && len(stringTerms) > 0 {
+	if len(stringTerms) > 0 {
 		lastTerm := stringTerms[len(stringTerms)-1]
-		u, err := p.expandIRI(activeContext, lastTerm, false, true, nil, nil)
+
+		u, err := p.expandIRI(activeCtx, lastTerm, false, true, nil, nil)
 		if err != nil {
 			return nil, err
 		}
+
 		inputType = u
 	}
 
 	// 13) and 14)
-	if err := p.expandElement(
+	if err := p.expandObjectKeys(
 		result,
 		nests,
-		activeContext,
+		activeCtx,
 		typContext,
-		activeProperty,
+		activeProp,
 		inputType,
 		baseURL,
-		elemObj,
+		obj,
 		opts,
 	); err != nil {
 		return nil, err
@@ -359,7 +425,6 @@ func (p *Processor) expand(
 
 	// 15)
 	if result.Has(KeywordValue) {
-		// 15.1)
 		if !result.IsValue() {
 			return nil, ErrInvalidValueObject
 		}
@@ -368,39 +433,27 @@ func (p *Processor) expand(
 			return nil, ErrInvalidValueObject
 		}
 
-		// 15.2) @json allows anything so don't validate in that case.
 		if !slices.Equal(result.Type, []string{KeywordJSON}) {
-			// 15.3)
 			if json.IsNull(result.Value) {
 				return nil, nil
 			}
 
-			// 15.4)
 			if result.Has(KeywordLanguage) && !json.IsString(result.Value) {
 				return nil, ErrInvalidLanguageTaggedValue
 			}
 
-			// 15.5)
-			if len(result.Type) > 1 || (len(result.Type) == 1 && !url.IsIRI(result.Type[0])) {
+			if len(result.Type) > 1 || (len(result.Type) == 1 && !iri.IsAbsolute(result.Type[0])) {
 				return nil, ErrInvalidTypedValue
 			}
 		}
 	}
 
-	// 16) implicit since [Object.Type] is always an array
-
 	// 17)
 	if result.Has(KeywordSet) || result.Has(KeywordList) {
-		// 17.1)
-		if len(result.propsWithout(
-			KeywordIndex,
-			KeywordList,
-			KeywordSet,
-		)) != 0 {
+		if len(result.propsWithout(KeywordIndex, KeywordList, KeywordSet)) != 0 {
 			return nil, ErrInvalidSetOrListObject
 		}
 
-		// 17.2)
 		if result.Has(KeywordSet) {
 			return result.Set, nil
 		}
@@ -414,7 +467,7 @@ func (p *Processor) expand(
 	}
 
 	// 19)
-	if activeProperty == "" || activeProperty == KeywordGraph {
+	if activeProp == "" || activeProp == KeywordGraph {
 		if result.Len() == 0 ||
 			result.Has(KeywordList) ||
 			result.Has(KeywordValue) ||
@@ -426,66 +479,32 @@ func (p *Processor) expand(
 	return []Node{*result}, nil
 }
 
-func (p *Processor) expandNestedElement(
+func (p *Processor) expandObjectKeys(
 	result *Node,
 	nests Properties,
-	activeContext *Context,
+	activeCtx *Context,
 	typContext *Context,
-	activeProperty string,
+	activeProp string,
 	inputType string,
-
 	baseURL string,
-	element json.Object,
-	opts expandOptions,
-) error {
-	termDef := activeContext.defs[activeProperty]
-
-	// 8)
-	if termDef.Context != nil {
-		ropts := newCtxProcessingOpts()
-		ropts.override = true
-		nctx, err := p.context(
-			activeContext,
-			termDef.Context,
-			termDef.BaseIRI,
-			ropts,
-		)
-		if err != nil {
-			return err
-		}
-		activeContext = nctx
-	}
-
-	return p.expandElement(result, nests, activeContext, typContext, activeProperty, inputType, baseURL, element, opts)
-}
-
-func (p *Processor) expandElement(
-	result *Node,
-	nests Properties,
-	activeContext *Context,
-	typContext *Context,
-	activeProperty string,
-	inputType string,
-
-	baseURL string,
-	element json.Object,
+	obj json.Object,
 	opts expandOptions,
 ) error {
 	// 13)
-	objKeys := slices.Collect(maps.Keys(element))
+	keys := slices.Collect(maps.Keys(obj))
 	if opts.ordered {
-		slices.Sort(objKeys)
+		slices.Sort(keys)
 	}
 
 mainLoop:
-	for _, key := range objKeys {
+	for _, key := range keys {
 		// 13.1)
 		if key == KeywordContext {
 			continue
 		}
 
 		// 13.2)
-		expProp, err := p.expandIRI(activeContext, key, false, true, nil, nil)
+		expProp, err := p.expandIRI(activeCtx, key, false, true, nil, nil)
 		if err != nil {
 			return err
 		}
@@ -499,12 +518,12 @@ mainLoop:
 			continue
 		}
 
-		value := element[key]
+		value := obj[key]
 
 		// 13.4)
 		if isKeyword(expProp) {
 			// 13.4.1)
-			if activeProperty == KeywordReverse {
+			if activeProp == KeywordReverse {
 				return ErrInvalidReversePropertyMap
 			}
 
@@ -530,7 +549,7 @@ mainLoop:
 					return ErrInvalidIDValue
 				}
 
-				iri, err := p.expandIRI(activeContext, s, true, false, nil, nil)
+				iri, err := p.expandIRI(activeCtx, s, true, false, nil, nil)
 				if err != nil {
 					return err
 				}
@@ -552,6 +571,7 @@ mainLoop:
 					// 13.4.4.1)
 					return ErrInvalidTypeValue
 				}
+
 				// 13.4.4.2) 13.4.4.3) skipped because frame expansion
 
 				// 13.4.4.4)
@@ -575,7 +595,7 @@ mainLoop:
 				result.Type = append(result.Type, iris...)
 			case KeywordGraph:
 				// 13.4.5)
-				res, err := p.expand(activeContext, KeywordGraph, value, baseURL, opts.withoutFromMap())
+				res, err := p.expandRaw(activeCtx, KeywordGraph, value, baseURL, opts.withoutFromMap())
 				if err != nil {
 					return err
 				}
@@ -592,8 +612,8 @@ mainLoop:
 				}
 
 				// 13.4.6.2)
-				res, err := p.expand(
-					activeContext,
+				res, err := p.expandRaw(
+					activeCtx,
 					"",
 					value,
 					baseURL,
@@ -676,18 +696,18 @@ mainLoop:
 				result.Index = i
 			case KeywordList:
 				// 13.4.11)
-				if activeProperty == "" || activeProperty == KeywordGraph {
+				if activeProp == "" || activeProp == KeywordGraph {
 					// 13.4.11.1)
 					continue mainLoop
 				}
 
-				if json.IsArray(value) && bytes.Equal(value, []byte(`[]`)) {
+				if json.IsEmptyArray(value) {
 					result.List = make([]Node, 0)
 				} else {
 					// 13.4.11.2)
-					res, err := p.expand(
-						activeContext,
-						activeProperty,
+					res, err := p.expandRaw(
+						activeCtx,
+						activeProp,
 						value,
 						baseURL,
 						opts.withoutFromMap(),
@@ -699,9 +719,9 @@ mainLoop:
 				}
 			case KeywordSet:
 				// 13.4.12)
-				res, err := p.expand(
-					activeContext,
-					activeProperty,
+				res, err := p.expandRaw(
+					activeCtx,
+					activeProp,
 					value,
 					baseURL,
 					opts.withoutFromMap(),
@@ -718,8 +738,8 @@ mainLoop:
 				}
 
 				// 13.4.13.2)	}
-				res, err := p.expand(
-					activeContext,
+				res, err := p.expandRaw(
+					activeCtx,
 					KeywordReverse,
 					value,
 					baseURL,
@@ -747,6 +767,7 @@ mainLoop:
 							if item.IsValue() || item.IsList() {
 								return ErrInvalidReversePropertyValue
 							}
+
 							// 13.4.13.4.2.1.2)
 							result.Reverse[k] = append(result.Reverse[k], item)
 						}
@@ -760,17 +781,19 @@ mainLoop:
 				if _, ok := nests[key]; !ok {
 					nests[key] = []Node{}
 				}
+
 				continue mainLoop
 			default:
 				p.logger.Warn("unhandled property", slog.String("proprety", expProp))
 			}
+
 			// 13.4.15) skip because frame expansion
 			// 13.4.16) 13.4.17) we've already been doing this implicitly at each step
 			continue mainLoop
 		}
 
 		// 13.5)
-		termDef := activeContext.defs[key]
+		termDef := activeCtx.defs[key]
 		cnt := termDef.Container
 		expVal := []Node{}
 
@@ -788,7 +811,7 @@ mainLoop:
 			langPairs := make([]Node, 0, len(langMap))
 
 			// 13.7.2)
-			dir := cmp.Or(termDef.Direction, activeContext.defaultDirection)
+			dir := cmp.Or(termDef.Direction, activeCtx.defaultDirection)
 
 			langKeys := slices.Collect(maps.Keys(langMap))
 			if opts.ordered {
@@ -823,7 +846,7 @@ mainLoop:
 					}
 
 					// 13.7.4.2.3)
-					if ldef := activeContext.defs[langKey]; ldef.IRI != KeywordNone && langKey != KeywordNone {
+					if ldef := activeCtx.defs[langKey]; ldef.IRI != KeywordNone && langKey != KeywordNone {
 						// 13.7.4.2.4)
 						obj.Language = langKey
 					}
@@ -864,20 +887,21 @@ mainLoop:
 				idxVal := objVal[idx]
 
 				// 13.8.3.1) 13.8.3.3)
-				mapCtx := activeContext
+				mapCtx := activeCtx
 
 				if (slices.Contains(cnt, KeywordID) ||
 					slices.Contains(cnt, KeywordType)) &&
-					activeContext.previousContext != nil {
-					mapCtx = activeContext.previousContext
+					activeCtx.previousCtx != nil {
+					mapCtx = activeCtx.previousCtx
 				}
 
 				// 13.8.3.2)
 				if slices.Contains(cnt, KeywordType) {
 					if def, ok := mapCtx.defs[idx]; ok && def.Context != nil {
+						dec := json.NewDecoder(bytes.NewReader(def.Context))
 						nctx, err := p.context(
 							mapCtx,
-							def.Context,
+							dec,
 							def.BaseIRI,
 							newCtxProcessingOpts(),
 						)
@@ -889,7 +913,7 @@ mainLoop:
 				}
 
 				// 13.8.3.4)
-				expIdx, err := p.expandIRI(activeContext, idx, false, true, nil, nil)
+				expIdx, err := p.expandIRI(activeCtx, idx, false, true, nil, nil)
 				if err != nil {
 					return err
 				}
@@ -898,7 +922,7 @@ mainLoop:
 				idxVal = json.MakeArray(idxVal)
 
 				// 13.8.3.6)
-				expIdxVals, err := p.expand(
+				expIdxVals, err := p.expandRaw(
 					mapCtx,
 					key,
 					idxVal,
@@ -922,16 +946,16 @@ mainLoop:
 
 							// 13.8.3.7.2.1)
 							rexpIdx, err := p.expandValue(
-								activeContext,
+								activeCtx,
 								idxKey,
-								[]byte(`"`+idx+`"`), // we know idx is a string so we cheat a little
+								idx,
 							)
 							if err != nil {
 								return err
 							}
 
 							// 13.8.3.7.2.2)
-							expIdxKey, err := p.expandIRI(activeContext, idxKey, false, true, nil, nil)
+							expIdxKey, err := p.expandIRI(activeCtx, idxKey, false, true, nil, nil)
 							if err != nil {
 								return err
 							}
@@ -955,7 +979,7 @@ mainLoop:
 							item.Index = idx
 						} else if slices.Contains(cnt, KeywordID) && !item.Has(KeywordID) {
 							// 13.8.3.7.4)
-							idx, err := p.expandIRI(activeContext,
+							idx, err := p.expandIRI(activeCtx,
 								idx, true, false, nil, nil)
 							if err != nil {
 								return err
@@ -973,8 +997,8 @@ mainLoop:
 		} else {
 			// 13.9)
 			var expErr error
-			expVal, expErr = p.expand(
-				activeContext,
+			expVal, expErr = p.expandRaw(
+				activeCtx,
 				key,
 				value,
 				baseURL,
@@ -1053,10 +1077,7 @@ mainLoop:
 
 	for _, k := range nestKeys {
 		// 14.1)
-		nestData := element[k]
-
-		// 14.2)
-		nestData = json.MakeArray(nestData)
+		nestData := json.MakeArray(obj[k])
 
 		var nestValues []json.Object
 		if err := json.Unmarshal(nestData, &nestValues); err != nil {
@@ -1065,7 +1086,7 @@ mainLoop:
 
 		for _, nestValue := range nestValues {
 			if p.expandsToKeyword(
-				activeContext,
+				activeCtx,
 				KeywordValue,
 				maps.Keys(nestValue),
 			) {
@@ -1073,10 +1094,22 @@ mainLoop:
 				return ErrInvalidNestValue
 			}
 			// 14.2.2)
-			if err := p.expandNestedElement(
+			nestCtx := activeCtx
+			if termDef := activeCtx.defs[k]; termDef.Context != nil {
+				ropts := newCtxProcessingOpts()
+				ropts.override = true
+
+				nctx, err := p.context(activeCtx, json.NewDecoder(bytes.NewReader(termDef.Context)), termDef.BaseIRI, ropts)
+				if err != nil {
+					return err
+				}
+
+				nestCtx = nctx
+			}
+			if err := p.expandObjectKeys(
 				result,
 				nests,
-				activeContext,
+				nestCtx,
 				typContext,
 				k,
 				inputType,
@@ -1110,27 +1143,23 @@ func (p *Processor) expandsToKeyword(
 			return true
 		}
 	}
+
 	return false
 }
 
 func (p *Processor) expandValue(
 	ctx *Context,
 	property string,
-	value json.RawMessage,
+	value any,
 ) (Node, error) {
-
 	def := ctx.defs[property]
 	result := Node{}
 
 	switch def.Type {
 	case KeywordID, KeywordVocab:
 		// 1) 2)
-		if json.IsNull(value) {
-			break
-		}
-
-		var val string
-		if err := json.Unmarshal(value, &val); err != nil || val == "" {
+		val, ok := value.(string)
+		if !ok || val == "" {
 			break // don't coerce types of some other value
 		}
 
@@ -1138,6 +1167,7 @@ func (p *Processor) expandValue(
 		if err != nil {
 			return result, err
 		}
+
 		result.ID = u
 		return result, nil
 	case KeywordNone, "":
@@ -1148,10 +1178,11 @@ func (p *Processor) expandValue(
 	}
 
 	// 3)
-	result.Value = value
+	raw, _ := json.Marshal(value)
+	result.Value = raw
 
 	// 5)
-	if json.IsString(value) {
+	if _, ok := value.(string); ok {
 		// 5.1)
 		lang := cmp.Or(def.Language, ctx.defaultLang)
 

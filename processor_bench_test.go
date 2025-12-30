@@ -1,6 +1,7 @@
 package longdistance_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 
@@ -18,7 +19,7 @@ func BenchmarkContextProcessing(b *testing.B) {
 		)
 
 		for b.Loop() {
-			_, err := p.Context(ctx, "")
+			_, err := p.Context(bytes.NewReader(ctx), "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -34,7 +35,7 @@ func BenchmarkContextProcessing(b *testing.B) {
 		)
 
 		for b.Loop() {
-			_, err := p.Context(ctx, "")
+			_, err := p.Context(bytes.NewReader(ctx), "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -49,7 +50,7 @@ func BenchmarkCompact(b *testing.B) {
 		ld.WithRemoteContextLoader(StaticLoader(b, "as.jsonld")),
 	)
 
-	exp, err := p.Expand(doc, "")
+	exp, err := p.Expand(bytes.NewReader(doc), "")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -99,7 +100,7 @@ func BenchmarkExpand(b *testing.B) {
 		)
 
 		for b.Loop() {
-			_, err := p.Expand(doc, "")
+			_, err := p.Expand(bytes.NewReader(doc), "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -115,7 +116,7 @@ func BenchmarkExpand(b *testing.B) {
 		)
 
 		for b.Loop() {
-			_, err := p.Expand(doc, "")
+			_, err := p.Expand(bytes.NewReader(doc), "")
 			if err != nil {
 				b.Fatal(err)
 			}
