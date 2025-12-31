@@ -94,16 +94,124 @@ func LoadData(t testing.TB, file string) json.RawMessage {
 	return res.Bytes()
 }
 
-// JSONDiff should be used when diffing JSON documents.
+// JSONDiff should be used when diffing JSON-LD documents.
+//
+// It implements the JSON-LD object comparison algorithm from
+// https://w3c.github.io/json-ld-api/tests/#json-ld-object-comparison
 func JSONDiff() cmp.Option {
 	return cmp.Options{
-		cmp.FilterValues(func(x, y hjson.RawMessage) bool {
+		cmp.FilterValues(func(x, y json.RawMessage) bool {
 			return json.Valid(x) && json.Valid(y)
-		}, cmp.Transformer("ParseJSON", func(in hjson.RawMessage) (out any) {
-			if err := hjson.Unmarshal(in, &out); err != nil {
-				panic(err) // should never occur given previous filter to ensure valid JSON
+		}, cmp.Comparer(func(x, y json.RawMessage) bool {
+			var xv, yv any
+			if err := json.Unmarshal(x, &xv); err != nil {
+				return false
 			}
-			return out
+
+			if err := json.Unmarshal(y, &yv); err != nil {
+				return false
+			}
+
+			return jsonLDEqual(xv, yv)
 		})),
 	}
+}
+
+// jsonLDEqual compares two JSON values using JSON-LD comparison semantics.
+func jsonLDEqual(x, y any) bool {
+	switch xv := x.(type) {
+	case map[string]any:
+		yv, ok := y.(map[string]any)
+		if !ok || len(xv) != len(yv) {
+			return false
+		}
+
+		for k, xVal := range xv {
+			yVal, ok := yv[k]
+			if !ok {
+				return false
+			}
+
+			switch k {
+			case ld.KeywordLanguage:
+				if !equalLanguage(xVal, yVal) {
+					return false
+				}
+			case ld.KeywordList:
+				if !equalOrdered(xVal, yVal) {
+					return false
+				}
+			default:
+				if !jsonLDEqual(xVal, yVal) {
+					return false
+				}
+			}
+		}
+
+		return true
+	case []any:
+		yv, ok := y.([]any)
+		if !ok || len(xv) != len(yv) {
+			return false
+		}
+
+		return equalUnordered(xv, yv)
+	case string:
+		ys, ok := y.(string)
+		return ok && xv == ys
+	case float64:
+		yf, ok := y.(float64)
+		return ok && xv == yf
+	case bool:
+		yb, ok := y.(bool)
+		return ok && xv == yb
+	case nil:
+		return y == nil
+	default:
+		return false
+	}
+}
+
+func equalLanguage(x, y any) bool {
+	if x == nil && y == nil {
+		return true
+	}
+
+	xs, xok := x.(string)
+	ys, yok := y.(string)
+	return xok && yok && strings.EqualFold(xs, ys)
+}
+
+func equalOrdered(x, y any) bool {
+	xv, xok := x.([]any)
+	yv, yok := y.([]any)
+	if !xok || !yok || len(xv) != len(yv) {
+		return false
+	}
+
+	for i := range xv {
+		if !jsonLDEqual(xv[i], yv[i]) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func equalUnordered(xv, yv []any) bool {
+	for _, xe := range xv {
+		found := false
+		for _, ye := range yv {
+			if jsonLDEqual(xe, ye) {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			return false
+		}
+	}
+
+	return true
 }
