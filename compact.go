@@ -360,12 +360,14 @@ func (p *Processor) compactIRI(
 	compactIRI := ""
 
 	// 7)
-	for term, def := range activeContext.defs {
+	for term := range activeContext.prefixes {
+		def := activeContext.defs[term]
 		if def.IRI == "" || def.IRI == key || !strings.HasPrefix(
-			key, def.IRI) || !def.Prefix {
+			key, def.IRI) {
 			// 7.1)
 			continue
 		}
+
 		// 7.2)
 		candidate := term + ":" + strings.TrimPrefix(
 			key, def.IRI)
@@ -390,10 +392,9 @@ func (p *Processor) compactIRI(
 	if err != nil {
 		return "", err
 	}
-	for term, def := range activeContext.defs {
-		if u.Scheme == term && def.Prefix && u.Host == "" {
-			return "", ErrIRIConfusedWithPrefix
-		}
+
+	if _, isPrefix := activeContext.prefixes[u.Scheme]; isPrefix && u.Host == "" {
+		return "", ErrIRIConfusedWithPrefix
 	}
 
 	// 10)
