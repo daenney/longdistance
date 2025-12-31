@@ -23,6 +23,7 @@ const RemoteContextLimit = 10
 // Context represents a processed JSON-LD context.
 type Context struct {
 	defs            map[string]Term
+	prefixes        map[string]struct{}
 	protected       map[string]struct{}
 	currentBaseIRI  string
 	originalBaseIRI string
@@ -39,6 +40,7 @@ type Context struct {
 func newContext(documentURL string) *Context {
 	return &Context{
 		defs:            make(map[string]Term),
+		prefixes:        make(map[string]struct{}, 8),
 		protected:       make(map[string]struct{}),
 		currentBaseIRI:  documentURL,
 		originalBaseIRI: documentURL,
@@ -72,6 +74,7 @@ func (c *Context) initInverse() {
 func (c *Context) clone() *Context {
 	return &Context{
 		defs:             maps.Clone(c.defs),
+		prefixes:         maps.Clone(c.prefixes),
 		protected:        maps.Clone(c.protected),
 		currentBaseIRI:   c.currentBaseIRI,
 		originalBaseIRI:  c.originalBaseIRI,
