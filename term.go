@@ -325,6 +325,9 @@ func (p *Processor) createTerm(
 
 		// 13.7
 		activeCtx.defs[term] = termDef
+		if termDef.Prefix {
+			activeCtx.prefixes[term] = struct{}{}
+		}
 		defined[term] = termDefined
 		return nil
 	} else if input.ID.Set && input.ID.Valid && term != input.ID.Value {
@@ -611,6 +614,9 @@ func (p *Processor) createTerm(
 
 	// 28)
 	activeCtx.defs[term] = termDef
+	if termDef.Prefix {
+		activeCtx.prefixes[term] = struct{}{}
+	}
 	defined[term] = termDefined
 	return nil
 }
