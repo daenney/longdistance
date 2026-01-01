@@ -126,8 +126,12 @@ func (p *Processor) Context(ctx io.Reader, baseURL string) (*Context, error) {
 	dec := json.NewDecoder(ctx)
 
 	res, err := p.context(nil, dec, baseURL, newCtxProcessingOpts())
+	if err != nil {
+		return nil, err
+	}
+
 	if _, derr := dec.Token(); derr != io.EOF {
-		err = errors.Join(derr, fmt.Errorf("trailing garbage in JSON"))
+		return nil, errors.Join(derr, fmt.Errorf("trailing garbage in JSON"))
 	}
 
 	return res, err

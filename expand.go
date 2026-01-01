@@ -61,13 +61,12 @@ func (p *Processor) Expand(document io.Reader, url string) ([]Node, error) {
 
 	dec := json.NewDecoder(document)
 	res, err := p.expand(ctx, "", dec, url, opts)
-
-	if _, derr := dec.Token(); derr != io.EOF {
-		err = errors.Join(err, fmt.Errorf("trailing garbage in JSON"))
+	if err != nil {
+		return nil, err
 	}
 
-	if err != nil {
-		return res, err
+	if _, derr := dec.Token(); derr != io.EOF {
+		return nil, errors.Join(err, fmt.Errorf("trailing garbage in JSON"))
 	}
 
 	if res == nil {
