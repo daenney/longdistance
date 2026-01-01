@@ -11,7 +11,6 @@ import (
 	"maps"
 	"slices"
 	"strings"
-	"unique"
 
 	"sourcery.dny.nu/longdistance/internal/iri"
 	"sourcery.dny.nu/longdistance/internal/json"
@@ -32,7 +31,24 @@ type Context struct {
 	defaultLang      string
 	defaultDirection string
 	previousCtx      *Context
-	inverse          inverseContext
+	inverse          *lazyInverse
+}
+
+type lazyInverse struct {
+	context *Context
+	defs    map[string]map[string]mapping
+	built   map[string]struct{}
+}
+
+func (l *lazyInverse) get(iri string) (map[string]mapping, bool) {
+	if _, ok := l.built[iri]; ok {
+		return l.defs[iri], ok
+	}
+
+	// we don't have a mapping yet, build it.
+	l.workIt(iri)
+	l.built[iri] = struct{}{}
+	return l.defs[iri], true
 }
 
 // newContext initialises a new context with the specified documentURL set as
@@ -67,7 +83,11 @@ func (c *Context) TermMap() map[string]Term {
 
 func (c *Context) initInverse() {
 	if c.inverse == nil {
-		c.inverse = workIt(c)
+		c.inverse = &lazyInverse{
+			defs:    make(map[string]map[string]mapping, len(c.defs)/3),
+			built:   make(map[string]struct{}, len(c.defs)/3),
+			context: c,
+		}
 	}
 }
 
@@ -805,57 +825,35 @@ func (p *Processor) retrieveRemoteContext(
 	return doc, nil
 }
 
-type inverseContext map[string]map[string]mapping
-
 type mapping struct {
-	Language map[unique.Handle[string]]string
-	Type     map[unique.Handle[string]]string
-	Any      map[unique.Handle[string]]string
-}
-
-var (
-	iKeywordAny     = unique.Make(KeywordAny)
-	iKeywordReverse = unique.Make(KeywordReverse)
-	iKeywordNone    = unique.Make(KeywordNone)
-)
-
-type internCache map[string]unique.Handle[string]
-
-func (i internCache) Get(key string) unique.Handle[string] {
-	if v, ok := i[key]; ok {
-		return v
-	}
-
-	v := unique.Make(key)
-	i[key] = v
-	return v
+	Language map[string]string
+	Type     map[string]string
+	Any      map[string]string
 }
 
 // workIt flips a context and reverses it
 //
 // ​ti esrever dna ti pilf ,nwod gniht ym tuP
-func workIt(activeContext *Context) inverseContext {
-	internCache := internCache{}
-
-	// 1)
-	result := inverseContext{}
-
+func (lctx *lazyInverse) workIt(iri string) {
 	// 2)
 	defaultLang := cmp.Or(
-		strings.ToLower(activeContext.defaultLang),
+		strings.ToLower(lctx.context.defaultLang),
 		KeywordNone,
 	)
 
-	// 3)
-	terms := slices.Collect(maps.Keys(activeContext.defs))
+	terms := make([]string, 0, 4)
+	for key, def := range lctx.context.defs {
+		// 3.1)
+		if !def.IsZero() && def.IRI == iri {
+			terms = append(terms, key)
+		}
+	}
+
 	slices.SortFunc(terms, sortedLeast)
 
 	for _, key := range terms {
-		def := activeContext.defs[key]
-		// 3.1)
-		if def.IsZero() {
-			continue
-		}
+		// 3)
+		def := lctx.context.defs[key]
 
 		// 3.2)
 		container := KeywordNone
@@ -866,22 +864,19 @@ func workIt(activeContext *Context) inverseContext {
 		}
 
 		// 3.3) 3.4) 3.5)
-		var containerMap map[string]mapping
-
-		if v, ok := result[def.IRI]; ok {
-			containerMap = v
-		} else {
+		containerMap, ok := lctx.defs[iri]
+		if !ok {
 			containerMap = map[string]mapping{}
-			result[def.IRI] = containerMap
+			lctx.defs[iri] = containerMap
 		}
 
 		// 3.6)
 		if _, ok := containerMap[container]; !ok {
 			containerMap[container] = mapping{
-				Language: map[unique.Handle[string]]string{},
-				Type:     map[unique.Handle[string]]string{},
-				Any: map[unique.Handle[string]]string{
-					iKeywordAny: key,
+				Language: make(map[string]string),
+				Type:     make(map[string]string),
+				Any: map[string]string{
+					KeywordAny: key,
 				},
 			}
 		}
@@ -897,25 +892,24 @@ func workIt(activeContext *Context) inverseContext {
 
 		if def.Reverse {
 			// 3.10)
-			if _, ok := typeMap[iKeywordReverse]; !ok {
-				typeMap[iKeywordReverse] = key
+			if _, ok := typeMap[KeywordReverse]; !ok {
+				typeMap[KeywordReverse] = key
 			}
 		} else if def.Type == KeywordNone {
 			// 3.11)
-			if _, ok := langMap[iKeywordAny]; !ok {
+			if _, ok := langMap[KeywordAny]; !ok {
 				// 3.11.1)
-				langMap[iKeywordAny] = key
+				langMap[KeywordAny] = key
 			}
-			if _, ok := typeMap[iKeywordAny]; !ok {
+			if _, ok := typeMap[KeywordAny]; !ok {
 				// 3.11.2)
-				typeMap[iKeywordAny] = key
+				typeMap[KeywordAny] = key
 			}
 		} else if def.Type != "" {
 			// 3.12)
-			iType := internCache.Get(def.Type)
-			if _, ok := typeMap[iType]; !ok {
+			if _, ok := typeMap[def.Type]; !ok {
 				// 3.12.1
-				typeMap[iType] = key
+				typeMap[def.Type] = key
 			}
 		} else if def.Language != "" && def.Direction != "" {
 			// 3.13)
@@ -933,9 +927,8 @@ func workIt(activeContext *Context) inverseContext {
 			}
 
 			// 3.13.6)
-			iLangDir := internCache.Get(langDir)
-			if _, ok := langMap[iLangDir]; !ok {
-				langMap[iLangDir] = key
+			if _, ok := langMap[langDir]; !ok {
+				langMap[langDir] = key
 			}
 		} else if def.Language != "" {
 			// 3.14)
@@ -943,9 +936,9 @@ func workIt(activeContext *Context) inverseContext {
 			if def.Language != KeywordNull {
 				lang = strings.ToLower(def.Language)
 			}
-			iLang := internCache.Get(lang)
-			if _, ok := langMap[iLang]; !ok {
-				langMap[iLang] = key
+
+			if _, ok := langMap[lang]; !ok {
+				langMap[lang] = key
 			}
 		} else if def.Direction != "" {
 			// 3.15)
@@ -953,43 +946,39 @@ func workIt(activeContext *Context) inverseContext {
 			if def.Direction != KeywordNull {
 				dir = "_" + def.Direction
 			}
-			iDir := internCache.Get(dir)
-			if _, ok := langMap[iDir]; !ok {
-				langMap[iDir] = key
+
+			if _, ok := langMap[dir]; !ok {
+				langMap[dir] = key
 			}
-		} else if activeContext.defaultDirection != "" {
+		} else if defDir := lctx.context.defaultDirection; defDir != "" {
 			// 3.16)
-			langDir := strings.ToLower(defaultLang) + "_" + activeContext.defaultDirection
-			iLangDir := internCache.Get(langDir)
-			if _, ok := langMap[iLangDir]; !ok {
-				langMap[iLangDir] = key
+			langDir := strings.ToLower(defaultLang) + "_" + defDir
+			if _, ok := langMap[langDir]; !ok {
+				langMap[langDir] = key
 			}
-			if _, ok := langMap[iKeywordNone]; !ok {
-				langMap[iKeywordNone] = key
+			if _, ok := langMap[KeywordNone]; !ok {
+				langMap[KeywordNone] = key
 			}
-			if _, ok := typeMap[iKeywordNone]; !ok {
-				typeMap[iKeywordNone] = key
+			if _, ok := typeMap[KeywordNone]; !ok {
+				typeMap[KeywordNone] = key
 			}
 		} else {
 			// 3.17)
 
 			// 3.17.1)
-			iDefLang := internCache.Get(defaultLang)
-			if _, ok := langMap[iDefLang]; !ok {
-				langMap[iDefLang] = key
+			if _, ok := langMap[defaultLang]; !ok {
+				langMap[defaultLang] = key
 			}
 
 			// 3.17.2)
-			if _, ok := langMap[iKeywordNone]; !ok {
-				langMap[iKeywordNone] = key
+			if _, ok := langMap[KeywordNone]; !ok {
+				langMap[KeywordNone] = key
 			}
 
 			// 3.17.3)
-			if _, ok := typeMap[iKeywordNone]; !ok {
-				typeMap[iKeywordNone] = key
+			if _, ok := typeMap[KeywordNone]; !ok {
+				typeMap[KeywordNone] = key
 			}
 		}
 	}
-
-	return result
 }

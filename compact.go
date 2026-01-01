@@ -43,7 +43,7 @@ func (p *Processor) compactIRI(
 	object, isObject := value.(Node)
 
 	// 4)
-	if _, ok := inverse[key]; ok && vocab {
+	if _, ok := inverse.get(key); ok && vocab {
 		// 4.1)
 		defaultLanguage := KeywordNone // 4.1.2)
 		if activeContext.defaultDirection != "" {
