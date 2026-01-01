@@ -17,7 +17,6 @@ type ProcessorOption func(*Processor)
 // the processor.
 type Processor struct {
 	modeLD10                  bool
-	ordered                   bool
 	baseIRI                   string
 	compactArrays             bool
 	compactToRelative         bool
@@ -83,16 +82,6 @@ func WithRemoteContextLoader(l RemoteContextLoaderFunc) ProcessorOption {
 func WithLogger(l *slog.Logger) ProcessorOption {
 	return func(p *Processor) {
 		p.logger = l
-	}
-}
-
-// WithOrdered ensures that object elements and language maps are processed in
-// lexicographical order.
-//
-// This is typically not needed, but helps to stabilise the test suite.
-func WithOrdered(b bool) ProcessorOption {
-	return func(p *Processor) {
-		p.ordered = b
 	}
 }
 

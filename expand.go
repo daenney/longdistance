@@ -18,14 +18,12 @@ import (
 
 type expandOptions struct {
 	frameExpansion bool
-	ordered        bool
 	fromMap        bool
 }
 
 func (e expandOptions) withoutFromMap() expandOptions {
 	return expandOptions{
 		frameExpansion: e.frameExpansion,
-		ordered:        e.ordered,
 	}
 }
 
@@ -34,7 +32,7 @@ func (e expandOptions) withoutFromMap() expandOptions {
 // If the document was retrieved from a URL, pass it as the second argument.
 // Otherwise an empty string.
 func (p *Processor) Expand(document io.Reader, url string) ([]Node, error) {
-	opts := expandOptions{ordered: p.ordered}
+	opts := expandOptions{}
 	baseIRI := cmp.Or(p.baseIRI, url)
 
 	var ctx *Context
@@ -491,13 +489,8 @@ func (p *Processor) expandObjectKeys(
 	opts expandOptions,
 ) error {
 	// 13)
-	keys := slices.Collect(maps.Keys(obj))
-	if opts.ordered {
-		slices.Sort(keys)
-	}
-
 mainLoop:
-	for _, key := range keys {
+	for key, value := range obj {
 		// 13.1)
 		if key == KeywordContext {
 			continue
@@ -517,8 +510,6 @@ mainLoop:
 		if !(isKeyword(expProp) || strings.Contains(expProp, ":")) {
 			continue
 		}
-
-		value := obj[key]
 
 		// 13.4)
 		if isKeyword(expProp) {
@@ -813,14 +804,8 @@ mainLoop:
 			// 13.7.2)
 			dir := cmp.Or(termDef.Direction, activeCtx.defaultDirection)
 
-			langKeys := slices.Collect(maps.Keys(langMap))
-			if opts.ordered {
-				slices.Sort(langKeys)
-			}
-
 			// 13.7.4)
-			for _, langKey := range langKeys {
-				langValue := langMap[langKey]
+			for langKey, langValue := range langMap {
 				// 13.7.4.1)
 				langValue = json.MakeArray(langValue)
 
@@ -878,14 +863,7 @@ mainLoop:
 			idxKey := cmp.Or(termDef.Index, KeywordIndex)
 
 			// 13.8.3)
-			idxKeys := slices.Collect(maps.Keys(objVal))
-			if opts.ordered {
-				slices.Sort(idxKeys)
-			}
-
-			for _, idx := range idxKeys {
-				idxVal := objVal[idx]
-
+			for idx, idxVal := range objVal {
 				// 13.8.3.1) 13.8.3.3)
 				mapCtx := activeCtx
 
@@ -927,7 +905,7 @@ mainLoop:
 					key,
 					idxVal,
 					baseURL,
-					expandOptions{fromMap: true, frameExpansion: opts.frameExpansion, ordered: opts.ordered},
+					expandOptions{fromMap: true, frameExpansion: opts.frameExpansion},
 				)
 				if err != nil {
 					return err
@@ -1070,12 +1048,7 @@ mainLoop:
 	}
 
 	// 14)
-	nestKeys := slices.Collect(maps.Keys(nests))
-	if opts.ordered {
-		slices.Sort(nestKeys)
-	}
-
-	for _, k := range nestKeys {
+	for k := range nests {
 		// 14.1)
 		nestData := json.MakeArray(obj[k])
 

@@ -524,7 +524,6 @@ func (p *Processor) Compact(
 		"",
 		document,
 		p.compactArrays,
-		p.ordered,
 	)
 
 	if err != nil {
@@ -563,7 +562,6 @@ func (p *Processor) compact(
 	activeProperty string,
 	element any,
 	compactArrays bool,
-	ordered bool,
 ) (any, error) {
 	var activeTermDefinition Term
 	if activeProperty != "" {
@@ -588,7 +586,7 @@ func (p *Processor) compact(
 		// 3.2)
 		for _, elem := range elemArray {
 			// 3.2.1)
-			compactedItem, err := p.compact(activeContext, activeProperty, elem, compactArrays, ordered)
+			compactedItem, err := p.compact(activeContext, activeProperty, elem, compactArrays)
 			if err != nil {
 				return nil, err
 			}
@@ -659,7 +657,6 @@ func (p *Processor) compact(
 			activeProperty,
 			object.List,
 			compactArrays,
-			ordered,
 		)
 	}
 
@@ -703,12 +700,7 @@ func (p *Processor) compact(
 	}
 
 	// 12)
-	expandedProperties := slices.Collect(maps.Keys(object.PropertySet()))
-	if ordered {
-		slices.Sort(expandedProperties)
-	}
-
-	for _, expandedProperty := range expandedProperties {
+	for expandedProperty := range object.PropertySet() {
 		// 12.1)
 		if expandedProperty == KeywordID {
 			// 12.1.1)
@@ -772,7 +764,6 @@ func (p *Processor) compact(
 						k: elem,
 					}},
 					compactArrays,
-					ordered,
 				)
 				if err != nil {
 					return nil, err
@@ -988,7 +979,6 @@ func (p *Processor) compact(
 				itemActiveProperty,
 				itemToCompact,
 				compactArrays,
-				ordered,
 			)
 			if err != nil {
 				return nil, err
@@ -1291,7 +1281,7 @@ func (p *Processor) compact(
 										activeContext,
 										itemActiveProperty,
 										Node{ID: expandedItem.ID},
-										false, false,
+										false,
 									)
 									if err != nil {
 										return nil, err

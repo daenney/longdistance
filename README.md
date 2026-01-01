@@ -27,6 +27,7 @@ A limited feature set of [JSON-LD Processing Algorithms and API specification][j
 [jldapi]: https://www.w3.org/TR/json-ld11-api/#compaction-algorithm
 
 Not supported:
+* `ordered` processing option.
 * Document flattening.
 * Framing.
 * RDF serialisation/deserialisation.
