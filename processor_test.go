@@ -27,7 +27,8 @@ func TestExcludeIRIsFromCompaction(t *testing.T) {
 		},
 	}
 
-	compacted, err := proc.Compact(
+	var dst bytes.Buffer
+	err := proc.Compact(&dst,
 		json.RawMessage(`{"as": "https://www.w3.org/ns/activitystreams#"}`),
 		[]ld.Node{graph},
 		"",
@@ -39,7 +40,7 @@ func TestExcludeIRIsFromCompaction(t *testing.T) {
 
 	want := json.RawMessage(`{"@context":{"as": "https://www.w3.org/ns/activitystreams#"},"@id": "https://example.com", "@type": "as:Create", "as:to": {"@id": "https://www.w3.org/ns/activitystreams#Public"}}`)
 
-	if diff := cmp.Diff(want, json.RawMessage(compacted), JSONDiff()); diff != "" {
+	if diff := cmp.Diff(want, json.RawMessage(dst.Bytes()), JSONDiff()); diff != "" {
 		t.Errorf("compaction mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -61,12 +62,13 @@ func TestRemapPrefixIRIs(t *testing.T) {
 		t.Fatal("expected IRI to remap.")
 	}
 
-	com, err := proc.Compact(json.RawMessage(`{"schema":"http://schema.org#"}`), nodes, "")
+	var dst bytes.Buffer
+	err = proc.Compact(&dst, json.RawMessage(`{"schema":"http://schema.org#"}`), nodes, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if bytes.Contains(com, []byte(`schema.org/`)) {
+	if bytes.Contains(dst.Bytes(), []byte(`schema.org/`)) {
 		t.Fatal("remap did not apply to compact")
 	}
 }

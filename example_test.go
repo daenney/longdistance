@@ -42,7 +42,9 @@ func Example() {
 
 	fmt.Println("Expanded form:", string(exp))
 
-	compacted, err := p.Compact(
+	var dst bytes.Buffer
+	err = p.Compact(
+		&dst,
 		json.RawMessage(`{
 			"ex": "https://example.org#",
 			"id": "@id",
@@ -57,7 +59,7 @@ func Example() {
 		panic(err)
 	}
 
-	fmt.Println("Compacted form:", string(compacted))
+	fmt.Println("Compacted form:", dst.String())
 
 	// Output:
 	// Entries: 1

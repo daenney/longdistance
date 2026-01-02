@@ -3,6 +3,7 @@ package longdistance_test
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"testing"
 
 	ld "sourcery.dny.nu/longdistance"
@@ -65,7 +66,7 @@ func BenchmarkCompact(b *testing.B) {
 		)
 
 		for b.Loop() {
-			_, err := p.Compact(compCtx, exp, "")
+			err := p.Compact(io.Discard, compCtx, exp, "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -80,7 +81,7 @@ func BenchmarkCompact(b *testing.B) {
 		)
 
 		for b.Loop() {
-			_, err := p.Compact(compCtx, exp, "")
+			err := p.Compact(io.Discard, compCtx, exp, "")
 			if err != nil {
 				b.Fatal(err)
 			}

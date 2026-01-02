@@ -13,6 +13,7 @@ type Token = json.Token
 type Delim = json.Delim
 
 var NewDecoder = json.NewDecoder
+var NewEncoder = json.NewEncoder
 var Marshal = json.Marshal
 var Unmarshal = json.Unmarshal
 

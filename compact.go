@@ -3,6 +3,7 @@ package longdistance
 import (
 	"bytes"
 	"cmp"
+	"io"
 	"maps"
 	"net/url"
 	"slices"
@@ -501,22 +502,25 @@ func (p *Processor) compactValue(
 }
 
 func (p *Processor) Compact(
+	dst io.Writer,
 	compactionCtx json.RawMessage,
 	document []Node,
 	documentURL string,
-) (json.RawMessage, error) {
+) error {
 	dec := json.NewDecoder(bytes.NewReader(compactionCtx))
 	ctx, err := p.context(nil, dec, documentURL, newCtxProcessingOpts())
 	if err != nil {
-		return nil, err
+		return err
 	}
 
+	enc := json.NewEncoder(dst)
+
 	if len(document) == 0 {
-		return json.RawMessage(`{}`), nil
+		return enc.Encode(json.RawMessage(`{}`))
 	}
 
 	if ctx == nil {
-		return json.Marshal(document)
+		return enc.Encode(document)
 	}
 
 	res, err := p.compact(
@@ -527,23 +531,24 @@ func (p *Processor) Compact(
 	)
 
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if res == nil {
-		return json.RawMessage(`{}`), nil
+		return enc.Encode(json.RawMessage(`{}`))
 	}
 
 	if v, isObject := res.(map[string]any); isObject && p.compactArrays {
 		if len(compactionCtx) > 2 {
 			v[KeywordContext] = compactionCtx
 		}
-		return json.Marshal(v)
+
+		return enc.Encode(v)
 	}
 
 	alias, err := p.compactIRI(ctx, KeywordGraph, nil, true, false)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	result := map[string]any{
@@ -554,7 +559,7 @@ func (p *Processor) Compact(
 		result[KeywordContext] = compactionCtx
 	}
 
-	return json.Marshal(result)
+	return enc.Encode(result)
 }
 
 func (p *Processor) compact(
