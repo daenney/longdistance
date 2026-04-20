@@ -3,6 +3,7 @@ package longdistance
 import (
 	"bytes"
 	"cmp"
+	"context"
 	"io"
 	"maps"
 	"net/url"
@@ -502,13 +503,14 @@ func (p *Processor) compactValue(
 }
 
 func (p *Processor) Compact(
+	ctx context.Context,
 	dst io.Writer,
 	compactionCtx json.RawMessage,
 	document []Node,
 	documentURL string,
 ) error {
 	dec := json.NewDecoder(bytes.NewReader(compactionCtx))
-	ctx, err := p.context(nil, dec, documentURL, newCtxProcessingOpts())
+	ldCtx, err := p.context(ctx, nil, dec, documentURL, newCtxProcessingOpts())
 	if err != nil {
 		return err
 	}
@@ -519,12 +521,13 @@ func (p *Processor) Compact(
 		return enc.Encode(json.RawMessage(`{}`))
 	}
 
-	if ctx == nil {
+	if ldCtx == nil {
 		return enc.Encode(document)
 	}
 
 	res, err := p.compact(
 		ctx,
+		ldCtx,
 		"",
 		document,
 		p.compactArrays,
@@ -546,7 +549,7 @@ func (p *Processor) Compact(
 		return enc.Encode(v)
 	}
 
-	alias, err := p.compactIRI(ctx, KeywordGraph, nil, true, false)
+	alias, err := p.compactIRI(ldCtx, KeywordGraph, nil, true, false)
 	if err != nil {
 		return err
 	}
@@ -563,6 +566,7 @@ func (p *Processor) Compact(
 }
 
 func (p *Processor) compact(
+	ctx context.Context,
 	activeContext *Context,
 	activeProperty string,
 	element any,
@@ -591,7 +595,7 @@ func (p *Processor) compact(
 		// 3.2)
 		for _, elem := range elemArray {
 			// 3.2.1)
-			compactedItem, err := p.compact(activeContext, activeProperty, elem, compactArrays)
+			compactedItem, err := p.compact(ctx, activeContext, activeProperty, elem, compactArrays)
 			if err != nil {
 				return nil, err
 			}
@@ -630,7 +634,7 @@ func (p *Processor) compact(
 		opts := newCtxProcessingOpts()
 		opts.override = true
 		dec := json.NewDecoder(bytes.NewReader(activeTermDefinition.Context))
-		nctx, err := p.context(activeContext, dec, activeTermDefinition.BaseIRI, opts)
+		nctx, err := p.context(ctx, activeContext, dec, activeTermDefinition.BaseIRI, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -658,6 +662,7 @@ func (p *Processor) compact(
 	if object.IsList() &&
 		slices.Contains(activeTermDefinition.Container, KeywordList) {
 		return p.compact(
+			ctx,
 			activeContext,
 			activeProperty,
 			object.List,
@@ -691,6 +696,7 @@ func (p *Processor) compact(
 				opts.propagate = false
 				dec := json.NewDecoder(bytes.NewReader(cdef.Context))
 				nctx, err := p.context(
+					ctx,
 					activeContext,
 					dec,
 					cdef.BaseIRI,
@@ -763,6 +769,7 @@ func (p *Processor) compact(
 			res := make([]any, 0, len(object.Reverse))
 			for k, elem := range object.Reverse {
 				compactedValue, err := p.compact(
+					ctx,
 					activeContext,
 					KeywordReverse,
 					Node{Properties: Properties{
@@ -889,7 +896,7 @@ func (p *Processor) compact(
 
 			if edef, eok := activeContext.defs[itemActiveProperty]; eok && edef.Nest != "" {
 				// 12.7.2)
-				term, err := p.expandIRI(activeContext, edef.Nest, false, true, nil, nil)
+				term, err := p.expandIRI(ctx, activeContext, edef.Nest, false, true, nil, nil)
 				if err != nil {
 					return nil, err
 				}
@@ -935,7 +942,7 @@ func (p *Processor) compact(
 
 			if edef, eok := activeContext.defs[itemActiveProperty]; eok && edef.Nest != "" {
 				// 12.8.2.1)
-				term, err := p.expandIRI(activeContext, edef.Nest, false, true, nil, nil)
+				term, err := p.expandIRI(ctx, activeContext, edef.Nest, false, true, nil, nil)
 				if err != nil {
 					return nil, err
 				}
@@ -980,6 +987,7 @@ func (p *Processor) compact(
 			}
 
 			compactedItem, err := p.compact(
+				ctx,
 				activeContext,
 				itemActiveProperty,
 				itemToCompact,
@@ -1194,7 +1202,7 @@ func (p *Processor) compact(
 					// 12.8.9.6)
 
 					// 12.8.9.6.1)
-					expIdx, err := p.expandIRI(activeContext, indexKey, false, false, nil, nil)
+					expIdx, err := p.expandIRI(ctx, activeContext, indexKey, false, false, nil, nil)
 					if err != nil {
 						return nil, err
 					}
@@ -1276,13 +1284,14 @@ func (p *Processor) compact(
 						// 12.8.9.8.4)
 						if len(compactedObject) == 1 {
 							for k := range compactedObject {
-								expIri, err := p.expandIRI(activeContext, k, false, true, nil, nil)
+								expIri, err := p.expandIRI(ctx, activeContext, k, false, true, nil, nil)
 								if err != nil {
 									return nil, err
 								}
 
 								if expIri == KeywordID {
 									res, err := p.compact(
+										ctx,
 										activeContext,
 										itemActiveProperty,
 										Node{ID: expandedItem.ID},

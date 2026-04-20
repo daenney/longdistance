@@ -2,6 +2,7 @@ package longdistance
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 
 	"sourcery.dny.nu/longdistance/internal/json"
@@ -22,7 +23,7 @@ func Example() {
 		"type": "https://example.org/type"
 	}`)
 
-	doc, err := p.Expand(bytes.NewReader(incoming), "")
+	doc, err := p.Expand(context.TODO(), bytes.NewReader(incoming), "")
 	if err != nil {
 		panic(err)
 	}
@@ -44,6 +45,7 @@ func Example() {
 
 	var dst bytes.Buffer
 	err = p.Compact(
+		context.TODO(),
 		&dst,
 		json.RawMessage(`{
 			"ex": "https://example.org#",

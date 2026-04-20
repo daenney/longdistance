@@ -20,7 +20,7 @@ func BenchmarkContextProcessing(b *testing.B) {
 		)
 
 		for b.Loop() {
-			_, err := p.Context(bytes.NewReader(ctx), "")
+			_, err := p.Context(b.Context(), bytes.NewReader(ctx), "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -36,7 +36,7 @@ func BenchmarkContextProcessing(b *testing.B) {
 		)
 
 		for b.Loop() {
-			_, err := p.Context(bytes.NewReader(ctx), "")
+			_, err := p.Context(b.Context(), bytes.NewReader(ctx), "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -51,7 +51,7 @@ func BenchmarkCompact(b *testing.B) {
 		ld.WithRemoteContextLoader(StaticLoader(b, "as.jsonld")),
 	)
 
-	exp, err := p.Expand(bytes.NewReader(doc), "")
+	exp, err := p.Expand(b.Context(), bytes.NewReader(doc), "")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func BenchmarkCompact(b *testing.B) {
 		)
 
 		for b.Loop() {
-			err := p.Compact(io.Discard, compCtx, exp, "")
+			err := p.Compact(b.Context(), io.Discard, compCtx, exp, "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -81,7 +81,7 @@ func BenchmarkCompact(b *testing.B) {
 		)
 
 		for b.Loop() {
-			err := p.Compact(io.Discard, compCtx, exp, "")
+			err := p.Compact(b.Context(), io.Discard, compCtx, exp, "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -101,7 +101,7 @@ func BenchmarkExpand(b *testing.B) {
 		)
 
 		for b.Loop() {
-			_, err := p.Expand(bytes.NewReader(doc), "")
+			_, err := p.Expand(b.Context(), bytes.NewReader(doc), "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -117,7 +117,7 @@ func BenchmarkExpand(b *testing.B) {
 		)
 
 		for b.Loop() {
-			_, err := p.Expand(bytes.NewReader(doc), "")
+			_, err := p.Expand(b.Context(), bytes.NewReader(doc), "")
 			if err != nil {
 				b.Fatal(err)
 			}
