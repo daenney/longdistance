@@ -2,14 +2,17 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"iter"
 	"maps"
 	"os"
+	"os/signal"
 	"slices"
 	"strings"
+	"syscall"
 	"unicode"
 	"unicode/utf8"
 
@@ -31,6 +34,9 @@ func main() {
 		panic("need a namespace")
 	}
 
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer cancel()
+
 	data, err := os.ReadFile(*doc)
 	if err != nil {
 		panic(err)
@@ -43,7 +49,7 @@ func main() {
 
 	proc := ld.NewProcessor()
 
-	res, err := proc.Context(bytes.NewReader(rawCtx[ld.KeywordContext]), *docIRI)
+	res, err := proc.Context(ctx, bytes.NewReader(rawCtx[ld.KeywordContext]), *docIRI)
 	if err != nil {
 		panic(err)
 	}
@@ -61,7 +67,7 @@ func main() {
 		result.WriteString("const Namespace = \"" + *ns + "\"\n\n")
 	}
 
-	terms := makeTerms(proc, *docIRI, *ns, res.Terms())
+	terms := makeTerms(ctx, proc, *docIRI, *ns, res.Terms())
 	slices.Sort(terms)
 	result.WriteString("const (\n")
 	for _, v := range terms {
@@ -72,6 +78,7 @@ func main() {
 }
 
 func makeTerms(
+	ctx context.Context,
 	proc *ld.Processor,
 	documentURL string,
 	namespace string,
@@ -138,7 +145,7 @@ func makeTerms(
 		}
 
 		if def.Context != nil {
-			nctx, err := proc.Context(bytes.NewReader(def.Context), documentURL)
+			nctx, err := proc.Context(ctx, bytes.NewReader(def.Context), documentURL)
 			if err != nil {
 				panic(err)
 			}
@@ -149,7 +156,7 @@ func makeTerms(
 	}
 
 	if len(scoped) != 0 {
-		texts = append(texts, makeTerms(proc, documentURL, namespace, maps.All(scoped))...)
+		texts = append(texts, makeTerms(ctx, proc, documentURL, namespace, maps.All(scoped))...)
 	}
 	return texts
 }

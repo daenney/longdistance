@@ -28,7 +28,9 @@ func TestExcludeIRIsFromCompaction(t *testing.T) {
 	}
 
 	var dst bytes.Buffer
-	err := proc.Compact(&dst,
+	err := proc.Compact(
+		t.Context(),
+		&dst,
 		json.RawMessage(`{"as": "https://www.w3.org/ns/activitystreams#"}`),
 		[]ld.Node{graph},
 		"",
@@ -52,7 +54,7 @@ func TestRemapPrefixIRIs(t *testing.T) {
 
 	compacted := json.RawMessage(`{"@context":{"schema":"http://schema.org#"}, "@id":"https://example.com", "schema:name": "Alice"}`)
 
-	nodes, err := proc.Expand(bytes.NewReader(compacted), "")
+	nodes, err := proc.Expand(t.Context(), bytes.NewReader(compacted), "")
 	if err != nil {
 		t.Fatal(err.Error())
 	}
@@ -63,7 +65,7 @@ func TestRemapPrefixIRIs(t *testing.T) {
 	}
 
 	var dst bytes.Buffer
-	err = proc.Compact(&dst, json.RawMessage(`{"schema":"http://schema.org#"}`), nodes, "")
+	err = proc.Compact(t.Context(), &dst, json.RawMessage(`{"schema":"http://schema.org#"}`), nodes, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +89,7 @@ func TestValidateContextFunc(t *testing.T) {
 
 	compacted := json.RawMessage(`{"@context":{"test": "https://example.com/different"}, "test": "value"}`)
 
-	_, err := proc.Expand(bytes.NewReader(compacted), "")
+	_, err := proc.Expand(t.Context(), bytes.NewReader(compacted), "")
 	if !errors.Is(err, ld.ErrInvalid) {
 		t.Fatalf("expected: %s, got: %s", ld.ErrInvalid, err)
 	}

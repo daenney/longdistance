@@ -122,10 +122,12 @@ func (c *Context) isBlank() bool {
 }
 
 // Context takes in [io.Reader] and parses it into a [Context].
-func (p *Processor) Context(ctx io.Reader, baseURL string) (*Context, error) {
-	dec := json.NewDecoder(ctx)
+func (p *Processor) Context(
+	ctx context.Context,
+	rawCtx io.Reader, baseURL string) (*Context, error) {
+	dec := json.NewDecoder(rawCtx)
 
-	res, err := p.context(nil, dec, baseURL, newCtxProcessingOpts())
+	res, err := p.context(ctx, nil, dec, baseURL, newCtxProcessingOpts())
 	if err != nil {
 		return nil, err
 	}
@@ -152,8 +154,9 @@ func newCtxProcessingOpts() ctxProcessingOpts {
 }
 
 func (p *Processor) context(
+	ctx context.Context,
 	activeCtx *Context,
-	ctx *json.Decoder,
+	rawCtx *json.Decoder,
 	baseURL string,
 	opts ctxProcessingOpts,
 ) (*Context, error) {
@@ -174,7 +177,7 @@ func (p *Processor) context(
 		result = activeCtx.clone()
 	}
 
-	tok, err := ctx.Token()
+	tok, err := rawCtx.Token()
 	if err != nil {
 		return nil, errors.Join(err, ErrInvalidLocalContext)
 	}
@@ -183,7 +186,7 @@ func (p *Processor) context(
 
 	if delim, ok := tok.(json.Delim); ok && delim == '[' {
 		finalFunc = func() error {
-			_, err = ctx.Token()
+			_, err = rawCtx.Token()
 			if err != nil {
 				return errors.Join(err, ErrInvalidLocalContext)
 			}
@@ -191,11 +194,11 @@ func (p *Processor) context(
 			return nil
 		}
 
-		if !ctx.More() {
+		if !rawCtx.More() {
 			return nil, nil
 		}
 
-		tok, err = ctx.Token()
+		tok, err = rawCtx.Token()
 		if err != nil {
 			return nil, errors.Join(err, ErrInvalidLocalContext)
 		}
@@ -211,7 +214,7 @@ func (p *Processor) context(
 				return nil, ErrInvalidLocalContext
 			}
 
-			ctxObj, err := p.decodeCtxObj(ctx)
+			ctxObj, err := p.decodeCtxObj(rawCtx)
 			if err != nil {
 				return nil, err
 			}
@@ -235,7 +238,7 @@ func (p *Processor) context(
 
 			// 5.6)
 			if ctxObj.Import.Set && ctxObj.Import.Valid && ctxObj.Import.Value != "" {
-				imported, err := p.handleImport(baseURL, ctxObj.Import.Value, ctxObj.Terms)
+				imported, err := p.handleImport(ctx, baseURL, ctxObj.Import.Value, ctxObj.Terms)
 				if err != nil {
 					return nil, err
 				}
@@ -251,7 +254,7 @@ func (p *Processor) context(
 
 			// 5.8)
 			if ctxObj.Vocab.Set {
-				if err := p.handleVocab(result, ctxObj.Vocab); err != nil {
+				if err := p.handleVocab(ctx, result, ctxObj.Vocab); err != nil {
 					return nil, err
 				}
 			}
@@ -296,6 +299,7 @@ func (p *Processor) context(
 				newOpts.override = opts.override
 				newOpts.remotes = slices.Clone(opts.remotes)
 				if err := p.createTerm(
+					ctx,
 					result,
 					ctxObj.Terms,
 					k,
@@ -359,7 +363,7 @@ func (p *Processor) context(
 
 			if !cached {
 				// 5.2.4) 5.2.5)
-				doc, err := p.retrieveRemoteContext(iri)
+				doc, err := p.retrieveRemoteContext(ctx, iri)
 				if err != nil {
 					return nil, err
 				}
@@ -370,6 +374,7 @@ func (p *Processor) context(
 				newOpts.validate = opts.validate
 				remoteDec := json.NewDecoder(bytes.NewReader(doc.Context))
 				res, err := p.context(
+					ctx,
 					result,
 					remoteDec,
 					doc.URL,
@@ -387,11 +392,11 @@ func (p *Processor) context(
 
 		first = false
 
-		if !ctx.More() {
+		if !rawCtx.More() {
 			break
 		}
 
-		tok, err = ctx.Token()
+		tok, err = rawCtx.Token()
 		if err != nil {
 			return nil, errors.Join(err, ErrInvalidLocalContext)
 		}
@@ -681,7 +686,7 @@ func (p *Processor) handleLanguage(result *Context, lang null[string]) error {
 	return nil
 }
 
-func (p *Processor) handleVocab(result *Context, vocab null[string]) error {
+func (p *Processor) handleVocab(ctx context.Context, result *Context, vocab null[string]) error {
 	// 5.8.2)
 	if !vocab.Valid {
 		result.vocabMapping = ""
@@ -693,7 +698,7 @@ func (p *Processor) handleVocab(result *Context, vocab null[string]) error {
 		return ErrInvalidVocabMapping
 	}
 
-	u, err := p.expandIRI(result, vocab.Value, true, true, nil, nil)
+	u, err := p.expandIRI(ctx, result, vocab.Value, true, true, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -729,7 +734,12 @@ func (p *Processor) handleBase(result *Context, base null[string]) error {
 	return ErrInvalidBaseIRI
 }
 
-func (p *Processor) handleImport(baseURL string, uri string, terms map[string]term) (map[string]term, error) {
+func (p *Processor) handleImport(
+	ctx context.Context,
+	baseURL string,
+	uri string,
+	terms map[string]term,
+) (map[string]term, error) {
 	// 5.6.1)
 	if p.modeLD10 {
 		return nil, ErrInvalidContextEntry
@@ -742,7 +752,7 @@ func (p *Processor) handleImport(baseURL string, uri string, terms map[string]te
 	}
 
 	// 5.6.4) 5.6.5)
-	res, err := p.retrieveRemoteContext(iri)
+	res, err := p.retrieveRemoteContext(ctx, iri)
 	if err != nil {
 		return nil, err
 	}
@@ -814,13 +824,14 @@ func (p *Processor) handleVersion(ver null[float64]) error {
 }
 
 func (p *Processor) retrieveRemoteContext(
+	ctx context.Context,
 	iri string,
 ) (Document, error) {
 	// 5.2.4) 5.2.5) the document loader is expected to do the caching
 	if p.loader == nil {
 		return Document{}, fmt.Errorf("no loader %w", ErrLoadingRemoteContext)
 	}
-	doc, err := p.loader(context.TODO(), iri)
+	doc, err := p.loader(ctx, iri)
 	if err != nil {
 		return Document{}, err
 	}

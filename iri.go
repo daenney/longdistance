@@ -1,6 +1,7 @@
 package longdistance
 
 import (
+	"context"
 	"log/slog"
 	"strings"
 
@@ -8,6 +9,7 @@ import (
 )
 
 func (p *Processor) expandIRI(
+	ctx context.Context,
 	activeCtx *Context,
 	value string,
 	relative bool,
@@ -36,6 +38,7 @@ func (p *Processor) expandIRI(
 		if _, ok := localCtx[value]; ok {
 			if state := defined[value]; state != termDefined {
 				if err := p.createTerm(
+					ctx,
 					activeCtx,
 					localCtx,
 					value,
@@ -72,6 +75,7 @@ func (p *Processor) expandIRI(
 				if _, ok := localCtx[prefix]; ok {
 					if state := defined[prefix]; state != termDefined {
 						if err := p.createTerm(
+							ctx,
 							activeCtx,
 							localCtx,
 							prefix,

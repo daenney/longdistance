@@ -23,7 +23,7 @@ func ProcessContext(tb testing.TB, lctx json.RawMessage, iri string) *ld.Context
 	tb.Helper()
 	p := ld.NewProcessor()
 
-	ctx, err := p.Context(bytes.NewReader(lctx), iri)
+	ctx, err := p.Context(tb.Context(), bytes.NewReader(lctx), iri)
 	if err != nil {
 		tb.Fatal(err)
 	}

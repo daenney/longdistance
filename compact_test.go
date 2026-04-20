@@ -307,13 +307,13 @@ func TestCompact(t *testing.T) {
 					ld.WithCompactToRelative(tc.compactToRelative),
 				)
 
-				expanded, err := proc.Expand(bytes.NewReader(src), docIRI)
+				expanded, err := proc.Expand(t.Context(), bytes.NewReader(src), docIRI)
 				if err != nil {
 					t.Fatalf("expected successful expand, got: %s", err)
 				}
 
 				var dst bytes.Buffer
-				err = proc.Compact(&dst, ctx.Context, expanded, docIRI)
+				err = proc.Compact(t.Context(), &dst, ctx.Context, expanded, docIRI)
 
 				if err == nil && tc.err != "" {
 					t.Fatalf("expected error: %s, got nil", tc.err)
@@ -353,13 +353,13 @@ func TestCompact(t *testing.T) {
 					ld.WithCompactToRelative(tc.compactToRelative),
 				)
 
-				expanded, err := proc.Expand(bytes.NewReader(src), docIRI)
+				expanded, err := proc.Expand(t.Context(), bytes.NewReader(src), docIRI)
 				if err != nil {
 					t.Fatalf("expected successful expand, got: %s", err)
 				}
 
 				var dst bytes.Buffer
-				err = proc.Compact(&dst, ctx.Context, expanded, docIRI)
+				err = proc.Compact(t.Context(), &dst, ctx.Context, expanded, docIRI)
 
 				if err == nil && tc.err != "" {
 					t.Fatalf("expected error: %s, got nil", tc.err)

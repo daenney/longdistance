@@ -3,6 +3,7 @@ package longdistance
 import (
 	"bytes"
 	"cmp"
+	"context"
 	"log/slog"
 	"slices"
 	"strings"
@@ -145,6 +146,7 @@ type term struct {
 }
 
 func (p *Processor) createTerm(
+	ctx context.Context,
 	activeCtx *Context,
 	localCtx map[string]term,
 	term string,
@@ -249,7 +251,7 @@ func (p *Processor) createTerm(
 	// 12)
 	if input.Type != "" {
 		// 12.2)
-		u, err := p.expandIRI(activeCtx, input.Type, false, true, localCtx, defined)
+		u, err := p.expandIRI(ctx, activeCtx, input.Type, false, true, localCtx, defined)
 		if err != nil {
 			return ErrInvalidTypeMapping
 		}
@@ -289,7 +291,7 @@ func (p *Processor) createTerm(
 		}
 
 		// 13.4)
-		u, err := p.expandIRI(activeCtx, input.Reverse, false, true, localCtx, defined)
+		u, err := p.expandIRI(ctx, activeCtx, input.Reverse, false, true, localCtx, defined)
 		if err != nil {
 			return ErrInvalidIRIMapping
 		}
@@ -339,7 +341,7 @@ func (p *Processor) createTerm(
 		}
 
 		// 14.2.3)
-		u, err := p.expandIRI(activeCtx, input.ID.Value, false, true, localCtx, defined)
+		u, err := p.expandIRI(ctx, activeCtx, input.ID.Value, false, true, localCtx, defined)
 		if err != nil {
 			return err
 		}
@@ -360,7 +362,7 @@ func (p *Processor) createTerm(
 			defined[term] = termDefined
 
 			// 14.2.4.2)
-			tu, err := p.expandIRI(activeCtx, term, false, true, localCtx, defined)
+			tu, err := p.expandIRI(ctx, activeCtx, term, false, true, localCtx, defined)
 			if err != nil {
 				return ErrInvalidIRIMapping
 			}
@@ -386,7 +388,7 @@ func (p *Processor) createTerm(
 		// 15.1)
 		if !strings.HasPrefix(suffix, "//") {
 			if _, ok := localCtx[prefix]; ok {
-				if err := p.createTerm(activeCtx, localCtx, prefix, defined, newCreateTermOptions()); err != nil {
+				if err := p.createTerm(ctx, activeCtx, localCtx, prefix, defined, newCreateTermOptions()); err != nil {
 					return err
 				}
 			}
@@ -402,7 +404,7 @@ func (p *Processor) createTerm(
 	} else if strings.Contains(term, "/") {
 		// 16)
 		// 16.2)
-		u, err := p.expandIRI(activeCtx, term, false, true, nil, nil)
+		u, err := p.expandIRI(ctx, activeCtx, term, false, true, nil, nil)
 		if err != nil {
 			return ErrInvalidIRIMapping
 		}
@@ -500,7 +502,7 @@ func (p *Processor) createTerm(
 		}
 
 		// 20.2)
-		u, err := p.expandIRI(activeCtx, input.Index, false, true, localCtx, defined)
+		u, err := p.expandIRI(ctx, activeCtx, input.Index, false, true, localCtx, defined)
 		if err != nil {
 			return ErrInvalidTermDefinition
 		}
@@ -526,6 +528,7 @@ func (p *Processor) createTerm(
 		resolvOpts.validate = false
 		ctxDec := json.NewDecoder(bytes.NewReader(input.Context))
 		_, err := p.context(
+			ctx,
 			activeCtx,
 			ctxDec,
 			opts.baseURL,

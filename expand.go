@@ -3,6 +3,7 @@ package longdistance
 import (
 	"bytes"
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -31,14 +32,16 @@ func (e expandOptions) withoutFromMap() expandOptions {
 //
 // If the document was retrieved from a URL, pass it as the second argument.
 // Otherwise an empty string.
-func (p *Processor) Expand(document io.Reader, url string) ([]Node, error) {
+func (p *Processor) Expand(
+	ctx context.Context,
+	document io.Reader, url string) ([]Node, error) {
 	opts := expandOptions{}
 	baseIRI := cmp.Or(p.baseIRI, url)
 
-	var ctx *Context
+	var ldCtx *Context
 
 	if p.expandContext == nil {
-		ctx = newContext(baseIRI)
+		ldCtx = newContext(baseIRI)
 	} else {
 		var obj json.Object
 		if err := json.Unmarshal(p.expandContext, &obj); err != nil {
@@ -53,14 +56,14 @@ func (p *Processor) Expand(document io.Reader, url string) ([]Node, error) {
 
 		var err error
 		dec := json.NewDecoder(bytes.NewReader(rawctx))
-		ctx, err = p.context(nil, dec, "", newCtxProcessingOpts())
+		ldCtx, err = p.context(ctx, nil, dec, "", newCtxProcessingOpts())
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	dec := json.NewDecoder(document)
-	res, err := p.expand(ctx, "", dec, url, opts)
+	res, err := p.expand(ctx, ldCtx, "", dec, url, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +102,7 @@ func (p *Processor) Expand(document io.Reader, url string) ([]Node, error) {
 }
 
 func (p *Processor) expand(
+	ctx context.Context,
 	activeCtx *Context,
 	activeProp string,
 	dec *json.Decoder,
@@ -135,12 +139,12 @@ func (p *Processor) expand(
 		// 5)
 		if t == '[' {
 			// array expansion
-			return p.expandArray(activeCtx, activeProp, dec, baseURL, opts, termDef)
+			return p.expandArray(ctx, activeCtx, activeProp, dec, baseURL, opts, termDef)
 		}
 
 		if t == '{' {
 			// object expansion
-			return p.expandObject(activeCtx, activeProp, dec, baseURL, opts, termDef, propContext)
+			return p.expandObject(ctx, activeCtx, activeProp, dec, baseURL, opts, termDef, propContext)
 		}
 
 		return nil, ErrInvalidLocalContext
@@ -152,14 +156,14 @@ func (p *Processor) expand(
 
 		if propContext != nil {
 			ctxDec := json.NewDecoder(bytes.NewReader(propContext))
-			nctx, err := p.context(activeCtx, ctxDec, termDef.BaseIRI, newCtxProcessingOpts())
+			nctx, err := p.context(ctx, activeCtx, ctxDec, termDef.BaseIRI, newCtxProcessingOpts())
 			if err != nil {
 				return nil, err
 			}
 			activeCtx = nctx
 		}
 
-		res, err := p.expandValue(activeCtx, activeProp, tok)
+		res, err := p.expandValue(ctx, activeCtx, activeProp, tok)
 		if err != nil {
 			return nil, err
 		}
@@ -168,6 +172,7 @@ func (p *Processor) expand(
 }
 
 func (p *Processor) expandArray(
+	ctx context.Context,
 	activeCtx *Context,
 	activeProp string,
 	dec *json.Decoder,
@@ -206,9 +211,9 @@ func (p *Processor) expandArray(
 			switch t {
 			case '{':
 				isMap = true
-				res, err = p.expandObject(activeCtx, activeProp, dec, baseURL, opts, termDef, termDef.Context)
+				res, err = p.expandObject(ctx, activeCtx, activeProp, dec, baseURL, opts, termDef, termDef.Context)
 			case '[':
-				res, err = p.expandArray(activeCtx, activeProp, dec, baseURL, opts, termDef)
+				res, err = p.expandArray(ctx, activeCtx, activeProp, dec, baseURL, opts, termDef)
 			default:
 				return nil, ErrInvalidLocalContext
 			}
@@ -216,17 +221,17 @@ func (p *Processor) expandArray(
 			res = nil
 		default:
 			if activeProp != "" && activeProp != KeywordGraph {
-				ctx := activeCtx
+				ldCtx := activeCtx
 
 				if termDef.Context != nil {
 					ctxDec := json.NewDecoder(bytes.NewReader(termDef.Context))
-					ctx, err = p.context(ctx, ctxDec, termDef.BaseIRI, newCtxProcessingOpts())
+					ldCtx, err = p.context(ctx, ldCtx, ctxDec, termDef.BaseIRI, newCtxProcessingOpts())
 					if err != nil {
 						return nil, err
 					}
 				}
 
-				node, err := p.expandValue(ctx, activeProp, tok)
+				node, err := p.expandValue(ctx, ldCtx, activeProp, tok)
 				if err != nil {
 					return nil, err
 				}
@@ -268,6 +273,7 @@ func (p *Processor) expandArray(
 }
 
 func (p *Processor) expandRaw(
+	ctx context.Context,
 	activeCtx *Context,
 	activeProp string,
 	value json.RawMessage,
@@ -278,10 +284,11 @@ func (p *Processor) expandRaw(
 		return nil, nil
 	}
 
-	return p.expand(activeCtx, activeProp, json.NewDecoder(bytes.NewReader(value)), baseURL, opts)
+	return p.expand(ctx, activeCtx, activeProp, json.NewDecoder(bytes.NewReader(value)), baseURL, opts)
 }
 
 func (p *Processor) expandObject(
+	ctx context.Context,
 	activeCtx *Context,
 	activeProp string,
 	dec *json.Decoder,
@@ -317,8 +324,8 @@ func (p *Processor) expandObject(
 
 	// 7)
 	if activeCtx.previousCtx != nil && !opts.fromMap {
-		hasValue := p.expandsToKeyword(activeCtx, KeywordValue, maps.Keys(obj))
-		hasID := p.expandsToKeyword(activeCtx, KeywordID, maps.Keys(obj))
+		hasValue := p.expandsToKeyword(ctx, activeCtx, KeywordValue, maps.Keys(obj))
+		hasID := p.expandsToKeyword(ctx, activeCtx, KeywordID, maps.Keys(obj))
 		if !hasValue && !(len(obj) == 1 && hasID) {
 			activeCtx = activeCtx.previousCtx
 		}
@@ -328,7 +335,7 @@ func (p *Processor) expandObject(
 	if propContext != nil {
 		ropts := newCtxProcessingOpts()
 		ropts.override = true
-		nctx, err := p.context(activeCtx, json.NewDecoder(bytes.NewReader(propContext)), termDef.BaseIRI, ropts)
+		nctx, err := p.context(ctx, activeCtx, json.NewDecoder(bytes.NewReader(propContext)), termDef.BaseIRI, ropts)
 		if err != nil {
 			return nil, err
 		}
@@ -338,7 +345,7 @@ func (p *Processor) expandObject(
 
 	// 9)
 	if rawCtx, ok := obj[KeywordContext]; ok {
-		nctx, err := p.context(activeCtx, json.NewDecoder(bytes.NewReader(rawCtx)), baseURL, newCtxProcessingOpts())
+		nctx, err := p.context(ctx, activeCtx, json.NewDecoder(bytes.NewReader(rawCtx)), baseURL, newCtxProcessingOpts())
 		if err != nil {
 			return nil, err
 		}
@@ -352,7 +359,7 @@ func (p *Processor) expandObject(
 	// 11) Find @type key and process type-scoped contexts
 	var typeVal json.RawMessage
 	for k, v := range obj {
-		u, err := p.expandIRI(activeCtx, k, false, true, nil, nil)
+		u, err := p.expandIRI(ctx, activeCtx, k, false, true, nil, nil)
 		if err != nil {
 			continue
 		}
@@ -376,7 +383,7 @@ func (p *Processor) expandObject(
 				ropts := newCtxProcessingOpts()
 				ropts.propagate = false
 
-				nctx, err := p.context(activeCtx, json.NewDecoder(bytes.NewReader(tscopeDef.Context)), adef.BaseIRI, ropts)
+				nctx, err := p.context(ctx, activeCtx, json.NewDecoder(bytes.NewReader(tscopeDef.Context)), adef.BaseIRI, ropts)
 				if err != nil {
 					return nil, err
 				}
@@ -397,7 +404,7 @@ func (p *Processor) expandObject(
 	if len(stringTerms) > 0 {
 		lastTerm := stringTerms[len(stringTerms)-1]
 
-		u, err := p.expandIRI(activeCtx, lastTerm, false, true, nil, nil)
+		u, err := p.expandIRI(ctx, activeCtx, lastTerm, false, true, nil, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -407,6 +414,7 @@ func (p *Processor) expandObject(
 
 	// 13) and 14)
 	if err := p.expandObjectKeys(
+		ctx,
 		result,
 		nests,
 		activeCtx,
@@ -477,6 +485,7 @@ func (p *Processor) expandObject(
 }
 
 func (p *Processor) expandObjectKeys(
+	ctx context.Context,
 	result *Node,
 	nests Properties,
 	activeCtx *Context,
@@ -496,7 +505,7 @@ mainLoop:
 		}
 
 		// 13.2)
-		expProp, err := p.expandIRI(activeCtx, key, false, true, nil, nil)
+		expProp, err := p.expandIRI(ctx, activeCtx, key, false, true, nil, nil)
 		if err != nil {
 			return err
 		}
@@ -539,7 +548,7 @@ mainLoop:
 					return ErrInvalidIDValue
 				}
 
-				iri, err := p.expandIRI(activeCtx, s, true, false, nil, nil)
+				iri, err := p.expandIRI(ctx, activeCtx, s, true, false, nil, nil)
 				if err != nil {
 					return err
 				}
@@ -574,7 +583,7 @@ mainLoop:
 
 				iris := make([]string, 0, len(vals))
 				for _, v := range vals {
-					u, err := p.expandIRI(typContext, v, true, true, nil, nil)
+					u, err := p.expandIRI(ctx, typContext, v, true, true, nil, nil)
 					if err != nil {
 						return err
 					}
@@ -585,7 +594,7 @@ mainLoop:
 				result.Type = append(result.Type, iris...)
 			case KeywordGraph:
 				// 13.4.5)
-				res, err := p.expandRaw(activeCtx, KeywordGraph, value, baseURL, opts.withoutFromMap())
+				res, err := p.expandRaw(ctx, activeCtx, KeywordGraph, value, baseURL, opts.withoutFromMap())
 				if err != nil {
 					return err
 				}
@@ -603,6 +612,7 @@ mainLoop:
 
 				// 13.4.6.2)
 				res, err := p.expandRaw(
+					ctx,
 					activeCtx,
 					"",
 					value,
@@ -696,6 +706,7 @@ mainLoop:
 				} else {
 					// 13.4.11.2)
 					res, err := p.expandRaw(
+						ctx,
 						activeCtx,
 						activeProp,
 						value,
@@ -710,6 +721,7 @@ mainLoop:
 			case KeywordSet:
 				// 13.4.12)
 				res, err := p.expandRaw(
+					ctx,
 					activeCtx,
 					activeProp,
 					value,
@@ -729,6 +741,7 @@ mainLoop:
 
 				// 13.4.13.2)	}
 				res, err := p.expandRaw(
+					ctx,
 					activeCtx,
 					KeywordReverse,
 					value,
@@ -877,6 +890,7 @@ mainLoop:
 					if def, ok := mapCtx.defs[idx]; ok && def.Context != nil {
 						dec := json.NewDecoder(bytes.NewReader(def.Context))
 						nctx, err := p.context(
+							ctx,
 							mapCtx,
 							dec,
 							def.BaseIRI,
@@ -890,7 +904,7 @@ mainLoop:
 				}
 
 				// 13.8.3.4)
-				expIdx, err := p.expandIRI(activeCtx, idx, false, true, nil, nil)
+				expIdx, err := p.expandIRI(ctx, activeCtx, idx, false, true, nil, nil)
 				if err != nil {
 					return err
 				}
@@ -900,6 +914,7 @@ mainLoop:
 
 				// 13.8.3.6)
 				expIdxVals, err := p.expandRaw(
+					ctx,
 					mapCtx,
 					key,
 					idxVal,
@@ -923,6 +938,7 @@ mainLoop:
 
 							// 13.8.3.7.2.1)
 							rexpIdx, err := p.expandValue(
+								ctx,
 								activeCtx,
 								idxKey,
 								idx,
@@ -932,7 +948,7 @@ mainLoop:
 							}
 
 							// 13.8.3.7.2.2)
-							expIdxKey, err := p.expandIRI(activeCtx, idxKey, false, true, nil, nil)
+							expIdxKey, err := p.expandIRI(ctx, activeCtx, idxKey, false, true, nil, nil)
 							if err != nil {
 								return err
 							}
@@ -956,7 +972,7 @@ mainLoop:
 							item.Index = idx
 						} else if slices.Contains(cnt, KeywordID) && !item.Has(KeywordID) {
 							// 13.8.3.7.4)
-							idx, err := p.expandIRI(activeCtx,
+							idx, err := p.expandIRI(ctx, activeCtx,
 								idx, true, false, nil, nil)
 							if err != nil {
 								return err
@@ -975,6 +991,7 @@ mainLoop:
 			// 13.9)
 			var expErr error
 			expVal, expErr = p.expandRaw(
+				ctx,
 				activeCtx,
 				key,
 				value,
@@ -1058,6 +1075,7 @@ mainLoop:
 
 		for _, nestValue := range nestValues {
 			if p.expandsToKeyword(
+				ctx,
 				activeCtx,
 				KeywordValue,
 				maps.Keys(nestValue),
@@ -1071,7 +1089,7 @@ mainLoop:
 				ropts := newCtxProcessingOpts()
 				ropts.override = true
 
-				nctx, err := p.context(activeCtx, json.NewDecoder(bytes.NewReader(termDef.Context)), termDef.BaseIRI, ropts)
+				nctx, err := p.context(ctx, activeCtx, json.NewDecoder(bytes.NewReader(termDef.Context)), termDef.BaseIRI, ropts)
 				if err != nil {
 					return err
 				}
@@ -1079,6 +1097,7 @@ mainLoop:
 				nestCtx = nctx
 			}
 			if err := p.expandObjectKeys(
+				ctx,
 				result,
 				nests,
 				nestCtx,
@@ -1097,12 +1116,14 @@ mainLoop:
 }
 
 func (p *Processor) expandsToKeyword(
+	ctx context.Context,
 	activeContext *Context,
 	keyword string,
 	elems iter.Seq[string],
 ) bool {
 	for k := range elems {
 		res, err := p.expandIRI(
+			ctx,
 			activeContext,
 			k, false, true, nil, nil,
 		)
@@ -1120,11 +1141,12 @@ func (p *Processor) expandsToKeyword(
 }
 
 func (p *Processor) expandValue(
-	ctx *Context,
+	ctx context.Context,
+	ldContext *Context,
 	property string,
 	value any,
 ) (Node, error) {
-	def := ctx.defs[property]
+	def := ldContext.defs[property]
 	result := Node{}
 
 	switch def.Type {
@@ -1135,7 +1157,7 @@ func (p *Processor) expandValue(
 			break // don't coerce types of some other value
 		}
 
-		u, err := p.expandIRI(ctx, val, true, def.Type == KeywordVocab, nil, nil)
+		u, err := p.expandIRI(ctx, ldContext, val, true, def.Type == KeywordVocab, nil, nil)
 		if err != nil {
 			return result, err
 		}
@@ -1156,10 +1178,10 @@ func (p *Processor) expandValue(
 	// 5)
 	if _, ok := value.(string); ok {
 		// 5.1)
-		lang := cmp.Or(def.Language, ctx.defaultLang)
+		lang := cmp.Or(def.Language, ldContext.defaultLang)
 
 		// 5.2)
-		dir := cmp.Or(def.Direction, ctx.defaultDirection)
+		dir := cmp.Or(def.Direction, ldContext.defaultDirection)
 
 		// 5.3)
 		if lang != KeywordNull {
