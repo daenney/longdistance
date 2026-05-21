@@ -3,6 +3,7 @@ package longdistance_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -524,6 +525,83 @@ func TestExpand(t *testing.T) {
 					}
 				}
 			})
+		})
+	}
+}
+
+func TestExpandCustom(t *testing.T) {
+	tests := []struct {
+		name string
+		proc *ld.Processor
+		in   json.RawMessage
+		out  json.RawMessage
+		err  error
+	}{
+		{
+			name: "disallowed keyword @included",
+			proc: ld.NewProcessor(
+				ld.WithDisallowedKeywords(ld.KeywordIncluded),
+			),
+			in:  LoadData(t, "w3c/expand/in01-in.jsonld"),
+			err: ld.ErrDisallowedKeyword,
+		},
+		{
+			name: "disallowed keyword @index",
+			proc: ld.NewProcessor(
+				ld.WithDisallowedKeywords(ld.KeywordIndex),
+			),
+			in:  LoadData(t, "w3c/expand/er31-in.jsonld"),
+			err: ld.ErrDisallowedKeyword,
+		},
+		{
+			name: "disallowed keyword @graph",
+			proc: ld.NewProcessor(
+				ld.WithDisallowedKeywords(ld.KeywordGraph),
+			),
+			in:  LoadData(t, "w3c/expand/0009-in.jsonld"),
+			err: ld.ErrDisallowedKeyword,
+		},
+		{
+			name: "disallowed keyword @nest",
+			proc: ld.NewProcessor(
+				ld.WithDisallowedKeywords(ld.KeywordNest),
+			),
+			in:  LoadData(t, "w3c/expand/n001-in.jsonld"),
+			err: ld.ErrDisallowedKeyword,
+		},
+		{
+			name: "disallowed keyword @reverse",
+			proc: ld.NewProcessor(
+				ld.WithDisallowedKeywords(ld.KeywordReverse),
+			),
+			in:  LoadData(t, "w3c/expand/0066-in.jsonld"),
+			err: ld.ErrDisallowedKeyword,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			nodes, err := tc.proc.Expand(t.Context(), bytes.NewReader(tc.in), "")
+
+			if !errors.Is(tc.err, err) {
+				t.Fatalf("expected error: %v, got: %v", tc.err, err)
+			}
+
+			if tc.err == nil {
+				got, err := json.Marshal(nodes)
+				if err != nil {
+					t.Fatalf("failed to marshal to expanded JSON: %s", err)
+				}
+				if diff := cmp.Diff(tc.out, json.RawMessage(got), JSONDiff()); diff != "" {
+					if *dump {
+						data, _ := json.MarshalIndent(nodes, "", "    ")
+						t.Logf("expanded from: %s", string(data))
+					}
+					t.Errorf("expansion mismatch (-want +got):\n%s", diff)
+				}
+			}
 		})
 	}
 }

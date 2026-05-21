@@ -521,6 +521,10 @@ mainLoop:
 
 		// 13.4)
 		if isKeyword(expProp) {
+			if _, ok := p.disallowedKeys[expProp]; ok {
+				return ErrDisallowedKeyword
+			}
+
 			// 13.4.1)
 			if activeProp == KeywordReverse {
 				return ErrInvalidReversePropertyMap

@@ -3,6 +3,7 @@ package longdistance
 import (
 	"encoding/json"
 	"log/slog"
+	"slices"
 )
 
 // ProcessorOption can be used to customise the behaviour of a [Processor].
@@ -27,6 +28,8 @@ type Processor struct {
 	remapPrefixIRIs           map[string]string
 	validateContextFunc       ValidateContextFunc
 	processedContext          map[string]*Context
+
+	disallowedKeys map[string]struct{}
 }
 
 // NewProcessor creates a new JSON-LD processor.
@@ -134,6 +137,36 @@ func WithRemapPrefixIRIs(old, new string) ProcessorOption {
 			p.remapPrefixIRIs = make(map[string]string, 2)
 		}
 		p.remapPrefixIRIs[old] = new
+	}
+}
+
+// WithDisallowedKeywords sets keywords that will cause expansion to be aborted.
+//
+// You can use this to constrain the processor to the subset of JSON-LD that is
+// in use in your domain. This can help avoid security issues due to the
+// unexpected use of certain JSON-LD functionality.
+//
+// The following keywords can be disabled:
+//   - [KeywordIncluded]
+//   - [KeywordIndex]
+//   - [KeywordGraph]
+//   - [KeywordNest]
+//   - [KeywordReverse]
+func WithDisallowedKeywords(keyword ...string) ProcessorOption {
+	disableable := []string{
+		KeywordIncluded, KeywordIndex, KeywordGraph, KeywordNest, KeywordReverse,
+	}
+
+	return func(p *Processor) {
+		if p.disallowedKeys == nil {
+			p.disallowedKeys = make(map[string]struct{}, len(keyword))
+		}
+
+		for _, kw := range keyword {
+			if slices.Contains(disableable, kw) {
+				p.disallowedKeys[kw] = struct{}{}
+			}
+		}
 	}
 }
 
