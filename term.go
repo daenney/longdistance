@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"log/slog"
 	"slices"
 	"strings"
 
 	"sourcery.dny.nu/longdistance/internal/iri"
-	"sourcery.dny.nu/longdistance/internal/json"
 )
 
 // termState tracks the definition state of a term during context processing.
@@ -29,7 +30,7 @@ type Term struct {
 	Reverse   bool
 
 	BaseIRI   string
-	Context   json.RawMessage
+	Context   jsontext.Value
 	Container []string
 	Direction string
 	Index     string
@@ -108,24 +109,27 @@ func newCreateTermOptions() createTermOptions {
 
 type array[T any] []T
 
-func (a *array[T]) UnmarshalJSON(data []byte) error {
-	if json.IsNull(data) {
+func (a *array[T]) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+	switch dec.PeekKind() {
+	case jsontext.KindNull:
+		return dec.SkipValue()
+	case jsontext.KindBeginArray:
+		var zero []T
+		if err := json.UnmarshalDecode(dec, &zero); err != nil {
+			return err
+		}
+		if len(zero) > 0 {
+			*a = zero
+		}
+		return nil
+	default:
+		var v T
+		if err := json.UnmarshalDecode(dec, &v); err != nil {
+			return err
+		}
+		*a = []T{v}
 		return nil
 	}
-
-	if json.IsEmptyArray(data) {
-		return nil
-	}
-
-	data = json.MakeArray(data)
-
-	var zero []T
-	if err := json.Unmarshal(data, &zero); err != nil {
-		return err
-	}
-
-	*a = zero
-	return nil
 }
 
 type term struct {
@@ -136,7 +140,7 @@ type term struct {
 	Reverse        string
 	Container      null[array[string]]
 	Index          string
-	Context        json.RawMessage
+	Context        jsontext.Value
 	Language       null[string]
 	Direction      null[string]
 	Nest           string
@@ -526,7 +530,7 @@ func (p *Processor) createTerm(
 		resolvOpts.override = true
 		resolvOpts.remotes = slices.Clone(opts.remotes)
 		resolvOpts.validate = false
-		ctxDec := json.NewDecoder(bytes.NewReader(input.Context))
+		ctxDec := jsontext.NewDecoder(bytes.NewReader(input.Context))
 		_, err := p.context(
 			ctx,
 			activeCtx,

@@ -3,7 +3,8 @@ package longdistance_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"flag"
 	"net/url"
 	"os"
@@ -19,7 +20,7 @@ var dump = flag.Bool("dump", false, "dump the compacted or expanded JSON on test
 
 const ASURL = "https://www.w3.org/ns/activitystreams"
 
-func ProcessContext(tb testing.TB, lctx json.RawMessage, iri string) *ld.Context {
+func ProcessContext(tb testing.TB, lctx jsontext.Value, iri string) *ld.Context {
 	tb.Helper()
 	p := ld.NewProcessor()
 
@@ -65,7 +66,7 @@ func FileLoader(tb testing.TB) ld.RemoteContextLoaderFunc {
 			filepath.Join(strings.Split(u.Path, "/")[3:]...),
 		))
 
-		var obj map[string]json.RawMessage
+		var obj map[string]jsontext.Value
 		if err := json.Unmarshal(data, &obj); err != nil {
 			return ld.Document{}, ld.ErrInvalidRemoteContext
 		}
@@ -77,21 +78,21 @@ func FileLoader(tb testing.TB) ld.RemoteContextLoaderFunc {
 	}
 }
 
-func LoadData(t testing.TB, file string) json.RawMessage {
+func LoadData(t testing.TB, file string) jsontext.Value {
 	t.Helper()
 
 	data, err := os.ReadFile(filepath.Join("testdata", file))
-
 	if err != nil {
 		t.Fatalf("failed to load %s: %s", file, err)
 	}
 
-	var res bytes.Buffer
-	err = json.Compact(&res, data)
+	v := jsontext.Value(data)
+	err = v.Compact()
 	if err != nil {
 		t.Fatalf("invalid JSON in %s: %s", file, err)
 	}
-	return res.Bytes()
+
+	return v
 }
 
 // JSONDiff should be used when diffing JSON-LD documents.
@@ -100,9 +101,9 @@ func LoadData(t testing.TB, file string) json.RawMessage {
 // https://w3c.github.io/json-ld-api/tests/#json-ld-object-comparison
 func JSONDiff() cmp.Option {
 	return cmp.Options{
-		cmp.FilterValues(func(x, y json.RawMessage) bool {
-			return json.Valid(x) && json.Valid(y)
-		}, cmp.Comparer(func(x, y json.RawMessage) bool {
+		cmp.FilterValues(func(x, y jsontext.Value) bool {
+			return x.IsValid() && y.IsValid()
+		}, cmp.Comparer(func(x, y jsontext.Value) bool {
 			var xv, yv any
 			if err := json.Unmarshal(x, &xv); err != nil {
 				return false

@@ -1,7 +1,7 @@
 package longdistance
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"log/slog"
 	"slices"
 )
@@ -23,7 +23,7 @@ type Processor struct {
 	compactToRelative         bool
 	loader                    RemoteContextLoaderFunc
 	logger                    *slog.Logger
-	expandContext             json.RawMessage
+	expandContext             jsontext.Value
 	excludeIRIsFromCompaction []string
 	remapPrefixIRIs           map[string]string
 	validateContextFunc       ValidateContextFunc
@@ -113,7 +113,7 @@ func WithCompactToRelative(b bool) ProcessorOption {
 
 // WithExpandContext provides an additional out-of-band context
 // that's used during expansion.
-func WithExpandContext(ctx json.RawMessage) ProcessorOption {
+func WithExpandContext(ctx jsontext.Value) ProcessorOption {
 	return func(p *Processor) {
 		p.expandContext = ctx
 	}

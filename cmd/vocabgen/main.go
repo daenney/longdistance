@@ -3,7 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"flag"
 	"fmt"
 	"iter"
@@ -42,7 +43,7 @@ func main() {
 		panic(err)
 	}
 
-	var rawCtx map[string]json.RawMessage
+	var rawCtx map[string]jsontext.Value
 	if err := json.Unmarshal(data, &rawCtx); err != nil {
 		panic(err)
 	}

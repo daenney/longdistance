@@ -2,7 +2,8 @@ package longdistance_test
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -19,8 +20,6 @@ import (
 // inputs are in compacted or partially expanded form. So all inputs
 // have to be expanded first, before we attempt compaction.
 func TestExpand(t *testing.T) {
-	// some tests are marked with ordered: true in order to stabilise
-	// order so we can diff with simple JSON comparison
 	tests := []struct {
 		id, name                                    string
 		ld10, ld11                                  bool
@@ -419,9 +418,9 @@ func TestExpand(t *testing.T) {
 			t.Parallel()
 
 			input := LoadData(t, tc.input)
-			var want json.RawMessage
+			var want jsontext.Value
 			if tc.output == "" {
-				want = json.RawMessage(`null`)
+				want = jsontext.Value(`null`)
 			} else {
 				want = LoadData(t, tc.output)
 			}
@@ -435,7 +434,7 @@ func TestExpand(t *testing.T) {
 					t.Skip()
 				}
 
-				var expContext json.RawMessage
+				var expContext jsontext.Value
 				if tc.expandContext != "" {
 					expContext = LoadData(t, tc.expandContext)
 				}
@@ -467,9 +466,9 @@ func TestExpand(t *testing.T) {
 					if err != nil {
 						t.Fatalf("failed to marshal to expanded JSON: %s", err)
 					}
-					if diff := cmp.Diff(want, json.RawMessage(got), JSONDiff()); diff != "" {
+					if diff := cmp.Diff(want, jsontext.Value(got), JSONDiff()); diff != "" {
 						if *dump {
-							data, _ := json.MarshalIndent(expanded, "", "    ")
+							data, _ := json.Marshal(got, jsontext.Multiline(true))
 							t.Logf("expanded from: %s", string(data))
 						}
 						t.Errorf("expansion mismatch (-want +got):\n%s", diff)
@@ -484,7 +483,7 @@ func TestExpand(t *testing.T) {
 					t.Skip()
 				}
 
-				var expContext json.RawMessage
+				var expContext jsontext.Value
 				if tc.expandContext != "" {
 					expContext = LoadData(t, tc.expandContext)
 				}
@@ -516,9 +515,9 @@ func TestExpand(t *testing.T) {
 					if err != nil {
 						t.Fatalf("failed to marshal to expanded JSON: %s", err)
 					}
-					if diff := cmp.Diff(want, json.RawMessage(got), JSONDiff()); diff != "" {
+					if diff := cmp.Diff(want, jsontext.Value(got), JSONDiff()); diff != "" {
 						if *dump {
-							data, _ := json.MarshalIndent(expanded, "", "    ")
+							data, _ := json.Marshal(got, jsontext.Multiline(true))
 							t.Logf("expanded from: %s", string(data))
 						}
 						t.Errorf("expansion mismatch (-want +got):\n%s", diff)
@@ -533,8 +532,8 @@ func TestExpandCustom(t *testing.T) {
 	tests := []struct {
 		name string
 		proc *ld.Processor
-		in   json.RawMessage
-		out  json.RawMessage
+		in   jsontext.Value
+		out  jsontext.Value
 		err  error
 	}{
 		{
@@ -543,8 +542,8 @@ func TestExpandCustom(t *testing.T) {
 				ld.WithRemoteContextLoader(StaticLoader(t, "as.jsonld")),
 				ld.WithLogger(slog.New(slog.DiscardHandler)),
 			),
-			in:  LoadData(t, "longdistance/value-lang-type/in.json"),
-			out: LoadData(t, "longdistance/value-lang-type/out.json"),
+			in:  LoadData(t, "longdistance/expansion/value-lang-type/in.json"),
+			out: LoadData(t, "longdistance/expansion/value-lang-type/out.json"),
 		},
 		{
 			name: "disallowed keyword @included",
@@ -603,9 +602,9 @@ func TestExpandCustom(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed to marshal to expanded JSON: %s", err)
 				}
-				if diff := cmp.Diff(tc.out, json.RawMessage(got), JSONDiff()); diff != "" {
+				if diff := cmp.Diff(tc.out, jsontext.Value(got), JSONDiff()); diff != "" {
 					if *dump {
-						data, _ := json.MarshalIndent(nodes, "", "    ")
+						data, _ := json.Marshal(got, jsontext.Multiline(true))
 						t.Logf("expanded from: %s", string(data))
 					}
 					t.Errorf("expansion mismatch (-want +got):\n%s", diff)

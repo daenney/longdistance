@@ -2,7 +2,7 @@ package longdistance
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 )
 
 // RemoteContextLoaderFunc is called to retrieve a remote context.
@@ -29,5 +29,5 @@ type RemoteContextLoaderFunc func(context.Context, string) (Document, error)
 //   - Context holds the value of the @context element, or the empty map.
 type Document struct {
 	URL     string
-	Context json.RawMessage
+	Context jsontext.Value
 }

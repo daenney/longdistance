@@ -2,7 +2,7 @@ package longdistance_test
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"io"
 	"testing"
 
@@ -10,7 +10,7 @@ import (
 )
 
 func BenchmarkContextProcessing(b *testing.B) {
-	ctx := json.RawMessage(`"https://www.w3.org/ns/activitystreams"`)
+	ctx := jsontext.Value(`"https://www.w3.org/ns/activitystreams"`)
 	b.Run("without processed context", func(b *testing.B) {
 		b.ReportAllocs()
 		b.SetBytes(int64(len(ctx)))

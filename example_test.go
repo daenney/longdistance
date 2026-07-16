@@ -3,15 +3,15 @@ package longdistance
 import (
 	"bytes"
 	"context"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
-
-	"sourcery.dny.nu/longdistance/internal/json"
 )
 
 func Example() {
 	p := NewProcessor()
 
-	incoming := json.RawMessage(`{
+	incoming := jsontext.Value(`{
 		"@context": {
 			"ex": "https://example.org#",
 			"id": "@id",
@@ -47,7 +47,7 @@ func Example() {
 	err = p.Compact(
 		context.TODO(),
 		&dst,
-		json.RawMessage(`{
+		jsontext.Value(`{
 			"ex": "https://example.org#",
 			"id": "@id",
 			"type": "@type",
@@ -69,5 +69,5 @@ func Example() {
 	// Object Type: [https://example.org/type]
 	// Property lookup: "Alice"
 	// Expanded form: [{"@id":"https://example.org/id","@type":["https://example.org/type"],"https://example.org#name":[{"@value":"Alice"}]}]
-	// Compacted form: {"@context":{"ex":"https://example.org#","id":"@id","type":"@type","name":"ex:name"},"id":"https://example.org/id","name":"Alice","type":"https://example.org/type"}
+	// Compacted form: {"@context":{"ex":"https://example.org#","id":"@id","type":"@type","name":"ex:name"},"type":"https://example.org/type","id":"https://example.org/id","name":"Alice"}
 }

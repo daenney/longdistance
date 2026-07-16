@@ -2,7 +2,9 @@ package longdistance_test
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -280,13 +282,13 @@ func TestCompact(t *testing.T) {
 			src := LoadData(t, tc.input)
 			ctxData := LoadData(t, tc.context)
 			var ctx struct {
-				Context json.RawMessage `json:"@context"`
+				Context jsontext.Value `json:"@context"`
 			}
 			if err := json.Unmarshal(ctxData, &ctx); err != nil {
 				t.Fatal(err.Error())
 			}
 
-			var want json.RawMessage
+			var want jsontext.Value
 			if tc.err == "" {
 				want = LoadData(t, tc.output)
 			}
@@ -329,9 +331,9 @@ func TestCompact(t *testing.T) {
 					}
 				} else {
 					got := dst.Bytes()
-					if diff := cmp.Diff(want, json.RawMessage(got), JSONDiff()); diff != "" {
+					if diff := cmp.Diff(want, jsontext.Value(got), JSONDiff()); diff != "" {
 						if *dump {
-							data, _ := json.MarshalIndent(got, "", "    ")
+							data, _ := json.Marshal(got, jsontext.Multiline(true))
 							t.Logf("compacted from: %s", string(data))
 						}
 						t.Errorf("compaction mismatch (-want +got):\n%s", diff)
@@ -375,15 +377,60 @@ func TestCompact(t *testing.T) {
 					}
 				} else {
 					got := dst.Bytes()
-					if diff := cmp.Diff(want, json.RawMessage(got), JSONDiff()); diff != "" {
+					if diff := cmp.Diff(want, jsontext.Value(got), JSONDiff()); diff != "" {
 						if *dump {
-							data, _ := json.MarshalIndent(got, "", "    ")
+							data, _ := json.Marshal(got, jsontext.Multiline(true))
 							t.Logf("compacted from: %s", string(data))
 						}
 						t.Errorf("compaction mismatch (-want +got):\n%s", diff)
 					}
 				}
 			})
+		})
+	}
+}
+
+func TestCompactCustom(t *testing.T) {
+	tests := []struct {
+		name             string
+		proc             *ld.Processor
+		in, context, out jsontext.Value
+		err              error
+	}{
+		{
+			name:    "empty-array property is not treated as null",
+			proc:    ld.NewProcessor(),
+			in:      LoadData(t, "longdistance/compaction/empty-array/in.json"),
+			context: LoadData(t, "longdistance/compaction/empty-array/context.json"),
+			out:     LoadData(t, "longdistance/compaction/empty-array/out.json"),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			expanded, err := tc.proc.Expand(t.Context(), bytes.NewReader(tc.in), "")
+			if err != nil {
+				t.Fatalf("expected successful expand, got: %s", err)
+			}
+
+			var dst bytes.Buffer
+			err = tc.proc.Compact(t.Context(), &dst, tc.context, expanded, "")
+
+			if !errors.Is(err, tc.err) {
+				t.Fatalf("expected error: %v, got: %v", tc.err, err)
+			}
+
+			if tc.err == nil {
+				got := dst.Bytes()
+				if diff := cmp.Diff(tc.out, jsontext.Value(got), JSONDiff()); diff != "" {
+					if *dump {
+						t.Logf("compacted: %s", string(got))
+					}
+					t.Errorf("compaction mismatch (-want +got):\n%s", diff)
+				}
+			}
 		})
 	}
 }

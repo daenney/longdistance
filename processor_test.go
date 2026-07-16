@@ -2,12 +2,12 @@ package longdistance_test
 
 import (
 	"bytes"
+	"encoding/json/jsontext"
 	"errors"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	ld "sourcery.dny.nu/longdistance"
-	"sourcery.dny.nu/longdistance/internal/json"
 )
 
 func TestExcludeIRIsFromCompaction(t *testing.T) {
@@ -31,7 +31,7 @@ func TestExcludeIRIsFromCompaction(t *testing.T) {
 	err := proc.Compact(
 		t.Context(),
 		&dst,
-		json.RawMessage(`{"as": "https://www.w3.org/ns/activitystreams#"}`),
+		jsontext.Value(`{"as": "https://www.w3.org/ns/activitystreams#"}`),
 		[]ld.Node{graph},
 		"",
 	)
@@ -40,9 +40,9 @@ func TestExcludeIRIsFromCompaction(t *testing.T) {
 		t.Fatal(err.Error())
 	}
 
-	want := json.RawMessage(`{"@context":{"as": "https://www.w3.org/ns/activitystreams#"},"@id": "https://example.com", "@type": "as:Create", "as:to": {"@id": "https://www.w3.org/ns/activitystreams#Public"}}`)
+	want := jsontext.Value(`{"@context":{"as": "https://www.w3.org/ns/activitystreams#"},"@id": "https://example.com", "@type": "as:Create", "as:to": {"@id": "https://www.w3.org/ns/activitystreams#Public"}}`)
 
-	if diff := cmp.Diff(want, json.RawMessage(dst.Bytes()), JSONDiff()); diff != "" {
+	if diff := cmp.Diff(want, jsontext.Value(dst.Bytes()), JSONDiff()); diff != "" {
 		t.Errorf("compaction mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -52,7 +52,7 @@ func TestRemapPrefixIRIs(t *testing.T) {
 		ld.WithRemapPrefixIRIs("http://schema.org#", "http://schema.org/"),
 	)
 
-	compacted := json.RawMessage(`{"@context":{"schema":"http://schema.org#"}, "@id":"https://example.com", "schema:name": "Alice"}`)
+	compacted := jsontext.Value(`{"@context":{"schema":"http://schema.org#"}, "@id":"https://example.com", "schema:name": "Alice"}`)
 
 	nodes, err := proc.Expand(t.Context(), bytes.NewReader(compacted), "")
 	if err != nil {
@@ -65,7 +65,7 @@ func TestRemapPrefixIRIs(t *testing.T) {
 	}
 
 	var dst bytes.Buffer
-	err = proc.Compact(t.Context(), &dst, json.RawMessage(`{"schema":"http://schema.org#"}`), nodes, "")
+	err = proc.Compact(t.Context(), &dst, jsontext.Value(`{"schema":"http://schema.org#"}`), nodes, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestValidateContextFunc(t *testing.T) {
 		}),
 	)
 
-	compacted := json.RawMessage(`{"@context":{"test": "https://example.com/different"}, "test": "value"}`)
+	compacted := jsontext.Value(`{"@context":{"test": "https://example.com/different"}, "test": "value"}`)
 
 	_, err := proc.Expand(t.Context(), bytes.NewReader(compacted), "")
 	if !errors.Is(err, ld.ErrInvalid) {

@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"errors"
-	"fmt"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 	"iter"
 	"log/slog"
@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	"sourcery.dny.nu/longdistance/internal/iri"
-	"sourcery.dny.nu/longdistance/internal/json"
+	"sourcery.dny.nu/longdistance/internal/jsonutil"
 )
 
 type expandOptions struct {
@@ -43,11 +43,11 @@ func (p *Processor) Expand(
 	if p.expandContext == nil {
 		ldCtx = newContext(baseIRI)
 	} else {
-		var obj json.Object
+		var obj jsonutil.Object
 		if err := json.Unmarshal(p.expandContext, &obj); err != nil {
 			return nil, ErrInvalidLocalContext
 		}
-		var rawctx json.RawMessage
+		var rawctx jsontext.Value
 		if v, ok := obj[KeywordContext]; ok {
 			rawctx = v
 		} else {
@@ -55,21 +55,20 @@ func (p *Processor) Expand(
 		}
 
 		var err error
-		dec := json.NewDecoder(bytes.NewReader(rawctx))
-		ldCtx, err = p.context(ctx, nil, dec, "", newCtxProcessingOpts())
+		ldCtx, err = p.context(ctx, nil, jsontext.NewDecoder(bytes.NewReader(rawctx)), "", newCtxProcessingOpts())
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	dec := json.NewDecoder(document)
+	dec := jsontext.NewDecoder(document,
+		jsontext.AllowDuplicateNames(false),
+		jsontext.AllowInvalidUTF8(false),
+	)
+
 	res, err := p.expand(ctx, ldCtx, "", dec, url, opts)
 	if err != nil {
 		return nil, err
-	}
-
-	if _, derr := dec.Token(); derr != io.EOF {
-		return nil, errors.Join(err, fmt.Errorf("trailing garbage in JSON"))
 	}
 
 	if res == nil {
@@ -105,7 +104,7 @@ func (p *Processor) expand(
 	ctx context.Context,
 	activeCtx *Context,
 	activeProp string,
-	dec *json.Decoder,
+	dec *jsontext.Decoder,
 	baseURL string,
 	opts expandOptions,
 ) ([]Node, error) {
@@ -125,49 +124,27 @@ func (p *Processor) expand(
 	// If there was no term definition, then .Context is nil.
 	propContext := termDef.Context
 
-	tok, err := dec.Token()
-	if err != nil {
-		return nil, err
-	}
-
-	// Handle based on token type
-	switch t := tok.(type) {
-	case nil:
+	switch dec.PeekKind() {
+	case jsontext.KindNull:
 		// 1)
-		return nil, nil
-	case json.Delim:
-		// 5)
-		if t == '[' {
-			// array expansion
-			return p.expandArray(ctx, activeCtx, activeProp, dec, baseURL, opts, termDef)
+		_, err := dec.ReadToken()
+		return nil, err
+	case jsontext.KindBeginArray:
+		// 5) array expansion
+		return p.expandArray(ctx, activeCtx, activeProp, dec, baseURL, opts, termDef)
+	case jsontext.KindBeginObject:
+		// 5) object expansion
+		return p.expandObject(ctx, activeCtx, activeProp, dec, baseURL, opts, termDef, propContext)
+	case jsontext.KindFalse, jsontext.KindTrue, jsontext.KindString, jsontext.KindNumber:
+		value, _ := dec.ReadValue()
+		if !value.IsValid() {
+			return nil, ErrInvalidLocalContext
 		}
 
-		if t == '{' {
-			// object expansion
-			return p.expandObject(ctx, activeCtx, activeProp, dec, baseURL, opts, termDef, propContext)
-		}
-
-		return nil, ErrInvalidLocalContext
-	default:
 		// 4) scalar (string, number, or boolean)
-		if activeProp == "" || activeProp == KeywordGraph {
-			return nil, nil
-		}
-
-		if propContext != nil {
-			ctxDec := json.NewDecoder(bytes.NewReader(propContext))
-			nctx, err := p.context(ctx, activeCtx, ctxDec, termDef.BaseIRI, newCtxProcessingOpts())
-			if err != nil {
-				return nil, err
-			}
-			activeCtx = nctx
-		}
-
-		res, err := p.expandValue(ctx, activeCtx, activeProp, tok)
-		if err != nil {
-			return nil, err
-		}
-		return []Node{res}, nil
+		return p.expandScalar(ctx, activeCtx, activeProp, value, termDef)
+	default:
+		return nil, ErrInvalidLocalContext
 	}
 }
 
@@ -175,13 +152,21 @@ func (p *Processor) expandArray(
 	ctx context.Context,
 	activeCtx *Context,
 	activeProp string,
-	dec *json.Decoder,
+	dec *jsontext.Decoder,
 	baseURL string,
 	opts expandOptions,
 	termDef Term,
 ) ([]Node, error) {
-	if !dec.More() {
-		if _, err := dec.Token(); err != nil {
+	// consume opening '['
+	_, err := dec.ReadToken()
+	if err != nil {
+		return nil, err
+	}
+
+	// check it's not an empty array
+	if dec.PeekKind() == jsontext.KindEndArray {
+		_, err := dec.ReadToken()
+		if err != nil {
 			return nil, err
 		}
 
@@ -197,47 +182,39 @@ func (p *Processor) expandArray(
 	first := true
 
 	// 5.2)
-	for dec.More() {
-		tok, err := dec.Token()
-		if err != nil {
-			return nil, err
-		}
-
+LOOP:
+	for {
 		var res []Node
 		isMap := false
 
-		switch t := tok.(type) {
-		case json.Delim:
-			switch t {
-			case '{':
-				isMap = true
-				res, err = p.expandObject(ctx, activeCtx, activeProp, dec, baseURL, opts, termDef, termDef.Context)
-			case '[':
-				res, err = p.expandArray(ctx, activeCtx, activeProp, dec, baseURL, opts, termDef)
-			default:
+		switch dec.PeekKind() {
+		case jsontext.KindNull:
+			_, err := dec.ReadToken()
+			if err != nil {
+				return nil, err
+			}
+			res = nil
+		case jsontext.KindEndArray:
+			_, err := dec.ReadToken()
+			if err != nil {
+				return nil, err
+			}
+
+			break LOOP
+		case jsontext.KindBeginArray:
+			res, err = p.expandArray(ctx, activeCtx, activeProp, dec, baseURL, opts, termDef)
+		case jsontext.KindBeginObject:
+			isMap = true
+			res, err = p.expandObject(ctx, activeCtx, activeProp, dec, baseURL, opts, termDef, termDef.Context)
+		case jsontext.KindFalse, jsontext.KindTrue, jsontext.KindNumber, jsontext.KindString:
+			value, verr := dec.ReadValue()
+			if verr != nil {
 				return nil, ErrInvalidLocalContext
 			}
-		case nil:
-			res = nil
+
+			res, err = p.expandScalar(ctx, activeCtx, activeProp, value, termDef)
 		default:
-			if activeProp != "" && activeProp != KeywordGraph {
-				ldCtx := activeCtx
-
-				if termDef.Context != nil {
-					ctxDec := json.NewDecoder(bytes.NewReader(termDef.Context))
-					ldCtx, err = p.context(ctx, ldCtx, ctxDec, termDef.BaseIRI, newCtxProcessingOpts())
-					if err != nil {
-						return nil, err
-					}
-				}
-
-				node, err := p.expandValue(ctx, ldCtx, activeProp, tok)
-				if err != nil {
-					return nil, err
-				}
-
-				res = []Node{node}
-			}
+			return nil, ErrInvalidLocalContext
 		}
 
 		if err != nil {
@@ -264,10 +241,6 @@ func (p *Processor) expandArray(
 		}
 	}
 
-	if _, err := dec.Token(); err != nil {
-		return nil, err
-	}
-
 	// 5.3)
 	return result, nil
 }
@@ -276,50 +249,70 @@ func (p *Processor) expandRaw(
 	ctx context.Context,
 	activeCtx *Context,
 	activeProp string,
-	value json.RawMessage,
+	value jsontext.Value,
 	baseURL string,
 	opts expandOptions,
 ) ([]Node, error) {
-	if len(value) == 0 || json.IsNull(value) {
+	if len(value) == 0 || value.Kind() == jsontext.KindNull {
 		return nil, nil
 	}
 
-	return p.expand(ctx, activeCtx, activeProp, json.NewDecoder(bytes.NewReader(value)), baseURL, opts)
+	return p.expand(ctx, activeCtx, activeProp, jsontext.NewDecoder(bytes.NewReader(value)), baseURL, opts)
 }
 
 func (p *Processor) expandObject(
 	ctx context.Context,
 	activeCtx *Context,
 	activeProp string,
-	dec *json.Decoder,
+	dec *jsontext.Decoder,
 	baseURL string,
 	opts expandOptions,
 	termDef Term,
-	propContext json.RawMessage,
+	propContext jsontext.Value,
 ) ([]Node, error) {
+	// consume opening '{'
+	_, err := dec.ReadToken()
+	if err != nil {
+		return nil, err
+	}
+
+	// check for empty object
+	if dec.PeekKind() == jsontext.KindEndObject {
+		_, err := dec.ReadToken()
+		return nil, err
+	}
+
 	// this is a bit unfortunate, but we have to go through all keys in the
 	// object for the @value/@type lookup after. We can't avoid collecting
 	// everything here.
-	obj := make(json.Object, 8)
+	obj := make(jsonutil.Object, 8)
 
-	for dec.More() {
-		tok, err := dec.Token()
+LOOP:
+	for {
+		if dec.PeekKind() == jsontext.KindEndObject {
+			_, err := dec.ReadToken()
+			if err != nil {
+				return nil, err
+			}
+
+			break LOOP
+		}
+
+		// read key
+		tok, err := dec.ReadToken()
 		if err != nil {
 			return nil, err
 		}
 
-		key := tok.(string)
+		key := tok.String()
 
-		var value json.RawMessage
-		if err := dec.Decode(&value); err != nil {
+		// read value
+		value, err := dec.ReadValue()
+		if err != nil {
 			return nil, err
 		}
 
-		obj[key] = value
-	}
-
-	if _, err := dec.Token(); err != nil {
-		return nil, err
+		obj[key] = value.Clone()
 	}
 
 	// 7)
@@ -335,7 +328,7 @@ func (p *Processor) expandObject(
 	if propContext != nil {
 		ropts := newCtxProcessingOpts()
 		ropts.override = true
-		nctx, err := p.context(ctx, activeCtx, json.NewDecoder(bytes.NewReader(propContext)), termDef.BaseIRI, ropts)
+		nctx, err := p.context(ctx, activeCtx, jsontext.NewDecoder(bytes.NewReader(propContext)), termDef.BaseIRI, ropts)
 		if err != nil {
 			return nil, err
 		}
@@ -345,7 +338,7 @@ func (p *Processor) expandObject(
 
 	// 9)
 	if rawCtx, ok := obj[KeywordContext]; ok {
-		nctx, err := p.context(ctx, activeCtx, json.NewDecoder(bytes.NewReader(rawCtx)), baseURL, newCtxProcessingOpts())
+		nctx, err := p.context(ctx, activeCtx, jsontext.NewDecoder(bytes.NewReader(rawCtx)), baseURL, newCtxProcessingOpts())
 		if err != nil {
 			return nil, err
 		}
@@ -357,7 +350,7 @@ func (p *Processor) expandObject(
 	typContext := activeCtx
 
 	// 11) Find @type key and process type-scoped contexts
-	var typeVal json.RawMessage
+	var typeVal jsontext.Value
 	for k, v := range obj {
 		u, err := p.expandIRI(ctx, activeCtx, k, false, true, nil, nil)
 		if err != nil {
@@ -371,7 +364,7 @@ func (p *Processor) expandObject(
 
 	var stringTerms []string
 	if len(typeVal) > 0 {
-		if err := json.Unmarshal(json.MakeArray(typeVal), &stringTerms); err != nil {
+		if err := json.Unmarshal(jsonutil.MakeArray(typeVal), &stringTerms); err != nil {
 			return nil, ErrInvalidTypeValue
 		}
 
@@ -383,7 +376,7 @@ func (p *Processor) expandObject(
 				ropts := newCtxProcessingOpts()
 				ropts.propagate = false
 
-				nctx, err := p.context(ctx, activeCtx, json.NewDecoder(bytes.NewReader(tscopeDef.Context)), adef.BaseIRI, ropts)
+				nctx, err := p.context(ctx, activeCtx, jsontext.NewDecoder(bytes.NewReader(tscopeDef.Context)), adef.BaseIRI, ropts)
 				if err != nil {
 					return nil, err
 				}
@@ -439,11 +432,11 @@ func (p *Processor) expandObject(
 		}
 
 		if !slices.Equal(result.Type, []string{KeywordJSON}) {
-			if json.IsNull(result.Value) {
+			if jsonutil.IsNull(result.Value) {
 				return nil, nil
 			}
 
-			if result.Has(KeywordLanguage) && !json.IsString(result.Value) {
+			if result.Has(KeywordLanguage) && !jsonutil.IsString(result.Value) {
 				return nil, ErrInvalidLanguageTaggedValue
 			}
 
@@ -455,7 +448,7 @@ func (p *Processor) expandObject(
 
 	// 17)
 	if result.Has(KeywordSet) || result.Has(KeywordList) {
-		if len(result.propsWithout(KeywordIndex, KeywordList, KeywordSet)) != 0 {
+		if result.propsWithout(KeywordIndex, KeywordList, KeywordSet) != 0 {
 			return nil, ErrInvalidSetOrListObject
 		}
 
@@ -493,7 +486,7 @@ func (p *Processor) expandObjectKeys(
 	activeProp string,
 	inputType string,
 	baseURL string,
-	obj json.Object,
+	obj jsonutil.Object,
 	opts expandOptions,
 ) error {
 	// 13)
@@ -538,7 +531,7 @@ mainLoop:
 			switch expProp {
 			case KeywordID:
 				// 13.4.3)
-				if json.IsNull(value) {
+				if jsonutil.IsNull(value) {
 					return ErrInvalidIDValue
 				}
 
@@ -570,7 +563,7 @@ mainLoop:
 				result.ID = iri
 			case KeywordType:
 				// 13.4.4)
-				if !json.IsString(value) && !json.IsArray(value) {
+				if !jsonutil.IsString(value) && !jsonutil.IsArray(value) {
 					// 13.4.4.1)
 					return ErrInvalidTypeValue
 				}
@@ -578,7 +571,7 @@ mainLoop:
 				// 13.4.4.2) 13.4.4.3) skipped because frame expansion
 
 				// 13.4.4.4)
-				value = json.MakeArray(value)
+				value = jsonutil.MakeArray(value)
 
 				var vals []string
 				if err := json.Unmarshal(value, &vals); err != nil {
@@ -610,7 +603,7 @@ mainLoop:
 					continue mainLoop
 				}
 
-				if !json.IsMap(value) && !json.IsArray(value) {
+				if !jsonutil.IsMap(value) && !jsonutil.IsArray(value) {
 					return ErrInvalidIncludedValue
 				}
 
@@ -651,7 +644,7 @@ mainLoop:
 				}
 
 				// 13.4.7.2)
-				if !json.IsScalar(value) && !json.IsNull(value) {
+				if !jsonutil.IsScalar(value) && !jsonutil.IsNull(value) {
 					return ErrInvalidValueObjectValue
 				}
 
@@ -705,7 +698,7 @@ mainLoop:
 					continue mainLoop
 				}
 
-				if json.IsEmptyArray(value) {
+				if jsonutil.IsEmptyArray(value) {
 					result.List = make([]Node, 0)
 				} else {
 					// 13.4.11.2)
@@ -738,7 +731,7 @@ mainLoop:
 				result.Set = res
 			case KeywordReverse:
 				// 13.4.13)
-				if !json.IsMap(value) {
+				if !jsonutil.IsMap(value) {
 					// 13.4.13.1)
 					return ErrInvalidReverseValue
 				}
@@ -807,9 +800,9 @@ mainLoop:
 		if termDef.Type == KeywordJSON {
 			// 13.6)
 			expVal = append(expVal, Node{Value: value, Type: []string{KeywordJSON}})
-		} else if slices.Contains(cnt, KeywordLanguage) && json.IsMap(value) {
+		} else if slices.Contains(cnt, KeywordLanguage) && jsonutil.IsMap(value) {
 			// 13.7)
-			var langMap json.Object
+			var langMap jsonutil.Object
 			if err := json.Unmarshal(value, &langMap); err != nil {
 				return err
 			}
@@ -823,9 +816,9 @@ mainLoop:
 			// 13.7.4)
 			for langKey, langValue := range langMap {
 				// 13.7.4.1)
-				langValue = json.MakeArray(langValue)
+				langValue = jsonutil.MakeArray(langValue)
 
-				var langValues json.Array
+				var langValues jsonutil.Array
 				if err := json.Unmarshal(langValue, &langValues); err != nil {
 					return err
 				}
@@ -833,12 +826,12 @@ mainLoop:
 				// 13.7.4.2)
 				for _, item := range langValues {
 					// 13.7.4.2.1)
-					if json.IsNull(item) {
+					if jsonutil.IsNull(item) {
 						continue
 					}
 
 					// 13.7.4.2.2)
-					if !json.IsString(item) {
+					if !jsonutil.IsString(item) {
 						return ErrInvalidLanguageMapValue
 					}
 
@@ -865,10 +858,10 @@ mainLoop:
 		} else if (slices.Contains(cnt, KeywordIndex) ||
 			slices.Contains(cnt, KeywordType) ||
 			slices.Contains(cnt, KeywordID)) &&
-			json.IsMap(value) {
+			jsonutil.IsMap(value) {
 			// 13.8)
 
-			var objVal json.Object
+			var objVal jsonutil.Object
 			if err := json.Unmarshal(value, &objVal); err != nil {
 				return err
 			}
@@ -892,11 +885,10 @@ mainLoop:
 				// 13.8.3.2)
 				if slices.Contains(cnt, KeywordType) {
 					if def, ok := mapCtx.defs[idx]; ok && def.Context != nil {
-						dec := json.NewDecoder(bytes.NewReader(def.Context))
 						nctx, err := p.context(
 							ctx,
 							mapCtx,
-							dec,
+							jsontext.NewDecoder(bytes.NewReader(def.Context)),
 							def.BaseIRI,
 							newCtxProcessingOpts(),
 						)
@@ -914,7 +906,7 @@ mainLoop:
 				}
 
 				// 13.8.3.5)
-				idxVal = json.MakeArray(idxVal)
+				idxVal = jsonutil.MakeArray(idxVal)
 
 				// 13.8.3.6)
 				expIdxVals, err := p.expandRaw(
@@ -945,7 +937,7 @@ mainLoop:
 								ctx,
 								activeCtx,
 								idxKey,
-								idx,
+								jsontext.Value(`"`+idx+`"`),
 							)
 							if err != nil {
 								return err
@@ -1070,9 +1062,9 @@ mainLoop:
 	// 14)
 	for k := range nests {
 		// 14.1)
-		nestData := json.MakeArray(obj[k])
+		nestData := jsonutil.MakeArray(obj[k])
 
-		var nestValues []json.Object
+		var nestValues []jsonutil.Object
 		if err := json.Unmarshal(nestData, &nestValues); err != nil {
 			return ErrInvalidNestValue
 		}
@@ -1093,7 +1085,7 @@ mainLoop:
 				ropts := newCtxProcessingOpts()
 				ropts.override = true
 
-				nctx, err := p.context(ctx, activeCtx, json.NewDecoder(bytes.NewReader(termDef.Context)), termDef.BaseIRI, ropts)
+				nctx, err := p.context(ctx, activeCtx, jsontext.NewDecoder(bytes.NewReader(termDef.Context)), termDef.BaseIRI, ropts)
 				if err != nil {
 					return err
 				}
@@ -1144,24 +1136,63 @@ func (p *Processor) expandsToKeyword(
 	return false
 }
 
+func (p *Processor) expandScalar(
+	ctx context.Context,
+	activeCtx *Context,
+	activeProp string,
+	value jsontext.Value,
+	termDef Term,
+) ([]Node, error) {
+	// 4) scalar (string, number, or boolean)
+	if activeProp == "" || activeProp == KeywordGraph {
+		return nil, nil
+	}
+
+	if termDef.Context != nil {
+		nctx, err := p.context(ctx, activeCtx,
+			jsontext.NewDecoder(bytes.NewReader(termDef.Context)),
+			termDef.BaseIRI, newCtxProcessingOpts())
+		if err != nil {
+			return nil, err
+		}
+		activeCtx = nctx
+	}
+
+	node, err := p.expandValue(ctx, activeCtx, activeProp, value)
+	if err != nil {
+		return nil, err
+	}
+	return []Node{node}, nil
+}
+
 func (p *Processor) expandValue(
 	ctx context.Context,
 	ldContext *Context,
 	property string,
-	value any,
+	value jsontext.Value,
 ) (Node, error) {
-	def := ldContext.defs[property]
 	result := Node{}
+
+	kind := value.Kind()
+	def := ldContext.defs[property]
 
 	switch def.Type {
 	case KeywordID, KeywordVocab:
 		// 1) 2)
-		val, ok := value.(string)
-		if !ok || val == "" {
+		if kind != jsontext.KindString {
 			break // don't coerce types of some other value
 		}
 
-		u, err := p.expandIRI(ctx, ldContext, val, true, def.Type == KeywordVocab, nil, nil)
+		var v string
+		if err := json.Unmarshal(value, &v); err != nil {
+			return Node{}, ErrInvalidLocalContext
+		}
+
+		if v == "" {
+			break
+		}
+
+		u, err := p.expandIRI(ctx, ldContext, v, true, def.Type == KeywordVocab, nil, nil)
 		if err != nil {
 			return result, err
 		}
@@ -1176,27 +1207,24 @@ func (p *Processor) expandValue(
 	}
 
 	// 3)
-	raw, _ := json.Marshal(value)
-	result.Value = raw
+	result.Value = value.Clone()
 
 	// 5)
-	if result.Type == nil {
-		if _, ok := value.(string); ok {
-			// 5.1)
-			lang := cmp.Or(def.Language, ldContext.defaultLang)
+	if result.Type == nil && kind == jsontext.KindString {
+		// 5.1)
+		lang := cmp.Or(def.Language, ldContext.defaultLang)
 
-			// 5.2)
-			dir := cmp.Or(def.Direction, ldContext.defaultDirection)
+		// 5.2)
+		dir := cmp.Or(def.Direction, ldContext.defaultDirection)
 
-			// 5.3)
-			if lang != KeywordNull {
-				result.Language = lang
-			}
+		// 5.3)
+		if lang != KeywordNull {
+			result.Language = lang
+		}
 
-			// 5.4)
-			if dir != KeywordNull {
-				result.Direction = dir
-			}
+		// 5.4)
+		if dir != KeywordNull {
+			result.Direction = dir
 		}
 	}
 
