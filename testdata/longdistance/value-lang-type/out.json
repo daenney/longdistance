@@ -1,0 +1,10 @@
+[
+  {
+    "https://www.w3.org/ns/activitystreams#published": [
+      {
+        "@type": "http://www.w3.org/2001/XMLSchema#dateTime",
+        "@value": "2026-07-28T17:05:46Z"
+      }
+    ]
+  }
+]

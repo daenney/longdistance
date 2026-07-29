@@ -1180,21 +1180,23 @@ func (p *Processor) expandValue(
 	result.Value = raw
 
 	// 5)
-	if _, ok := value.(string); ok {
-		// 5.1)
-		lang := cmp.Or(def.Language, ldContext.defaultLang)
+	if result.Type == nil {
+		if _, ok := value.(string); ok {
+			// 5.1)
+			lang := cmp.Or(def.Language, ldContext.defaultLang)
 
-		// 5.2)
-		dir := cmp.Or(def.Direction, ldContext.defaultDirection)
+			// 5.2)
+			dir := cmp.Or(def.Direction, ldContext.defaultDirection)
 
-		// 5.3)
-		if lang != KeywordNull {
-			result.Language = lang
-		}
+			// 5.3)
+			if lang != KeywordNull {
+				result.Language = lang
+			}
 
-		// 5.4)
-		if dir != KeywordNull {
-			result.Direction = dir
+			// 5.4)
+			if dir != KeywordNull {
+				result.Direction = dir
+			}
 		}
 	}
 
