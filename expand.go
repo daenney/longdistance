@@ -184,6 +184,10 @@ func (p *Processor) expandArray(
 	// 5.2)
 LOOP:
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		var res []Node
 		isMap := false
 
@@ -289,6 +293,10 @@ func (p *Processor) expandObject(
 
 LOOP:
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		if dec.PeekKind() == jsontext.KindEndObject {
 			_, err := dec.ReadToken()
 			if err != nil {
