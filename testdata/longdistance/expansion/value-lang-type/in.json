@@ -1,9 +1,7 @@
 {
-  "@context": [
-    "https://www.w3.org/ns/activitystreams",
-    {
-      "@language": "und"
-    }
-  ],
-  "published": "2026-07-28T17:05:46Z"
+  "@context": {
+    "typed": { "@id": "http://ex/typed", "@type": "http://ex/dt" },
+    "@language": "und"
+  },
+  "typed": "v"
 }

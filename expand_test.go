@@ -538,12 +538,9 @@ func TestExpandCustom(t *testing.T) {
 	}{
 		{
 			name: "value cannot have @type and @language",
-			proc: ld.NewProcessor(
-				ld.WithRemoteContextLoader(StaticLoader(t, "as.jsonld")),
-				ld.WithLogger(slog.New(slog.DiscardHandler)),
-			),
-			in:  LoadData(t, "longdistance/expansion/value-lang-type/in.json"),
-			out: LoadData(t, "longdistance/expansion/value-lang-type/out.json"),
+			proc: ld.NewProcessor(),
+			in:   LoadData(t, "longdistance/expansion/value-lang-type/in.json"),
+			out:  LoadData(t, "longdistance/expansion/value-lang-type/out.json"),
 		},
 		{
 			name: "disallowed keyword @included",
