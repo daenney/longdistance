@@ -26,6 +26,7 @@ type Processor struct {
 	expandContext             jsontext.Value
 	excludeIRIsFromCompaction []string
 	remapPrefixIRIs           map[string]string
+	rejectEmptyOrRelativeID   bool
 	validateContextFunc       ValidateContextFunc
 	processedContext          map[string]*Context
 
@@ -203,5 +204,17 @@ func WithProcessedContext(iri string, ctx *Context) ProcessorOption {
 			p.processedContext = make(map[string]*Context, 2)
 		}
 		p.processedContext[iri] = ctx
+	}
+}
+
+// WithRejectEmptyOrRelativeID rejects documents where @id in expanded form is an empty
+// or a relative IRI.
+//
+// Nodes without aboslute IRIs for @id are often an indication of an issue, like a missing
+// base during expansion. This option makes expansion more strict than the specification
+// demands, but it aligns better with what consumers typically expect.
+func WithRejectEmptyOrRelativeID(b bool) ProcessorOption {
+	return func(p *Processor) {
+		p.rejectEmptyOrRelativeID = b
 	}
 }

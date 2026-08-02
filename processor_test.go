@@ -18,11 +18,11 @@ func TestExcludeIRIsFromCompaction(t *testing.T) {
 	)
 
 	graph := ld.Node{
-		ID:   "https://example.com",
+		ID:   ld.NewID("https://example.com"),
 		Type: []string{"https://www.w3.org/ns/activitystreams#Create"},
 		Properties: ld.Properties{
 			"https://www.w3.org/ns/activitystreams#to": []ld.Node{
-				{ID: excl},
+				{ID: ld.NewID(excl)},
 			},
 		},
 	}

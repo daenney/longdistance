@@ -470,7 +470,7 @@ func (p *Processor) compactIRIUncached(
 			// 4.16)
 			c, err := p.compactIRI(
 				activeContext,
-				object.ID,
+				object.ID.Value,
 				nil, true, false,
 			)
 			if err != nil {
@@ -478,7 +478,7 @@ func (p *Processor) compactIRIUncached(
 			}
 
 			cdef, cok := activeContext.defs[c]
-			if cok && cdef.IRI == object.ID {
+			if cok && cdef.IRI == object.ID.Value {
 				// 4.16.1)
 				preferredValues = append(preferredValues,
 					KeywordVocab,
@@ -645,12 +645,12 @@ func (p *Processor) compactValue(
 			switch def.Type {
 			case KeywordID:
 				res, err = p.compactIRI(ctx,
-					value.ID,
+					value.ID.Value,
 					nil,
 					false, false)
 			case KeywordVocab:
 				res, err = p.compactIRI(ctx,
-					value.ID,
+					value.ID.Value,
 					nil,
 					true, false)
 			default:
@@ -907,7 +907,7 @@ func (p *Processor) compactNode(
 		// 12.1)
 		if expandedProperty == KeywordID {
 			// 12.1.1)
-			cv, err := p.compactIRI(activeContext, object.ID, nil, false, false)
+			cv, err := p.compactIRI(activeContext, object.ID.Value, nil, false, false)
 			if err != nil {
 				return nil, err
 			}
@@ -1249,7 +1249,7 @@ func (p *Processor) compactNode(
 
 					// 12.8.8.1.2)
 					vocab := true
-					key := cmp.Or(expandedItem.ID, KeywordNone)
+					key := cmp.Or(expandedItem.ID.Value, KeywordNone)
 					if expandedItem.Has(KeywordID) {
 						vocab = false
 					}
@@ -1336,7 +1336,7 @@ func (p *Processor) compactNode(
 						if err != nil {
 							return nil, err
 						}
-						val, err := p.compactIRI(activeContext, expandedItem.ID, nil, false, false)
+						val, err := p.compactIRI(activeContext, expandedItem.ID.Value, nil, false, false)
 						if err != nil {
 							return nil, err
 						}

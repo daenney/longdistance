@@ -1,0 +1,4 @@
+{
+  "@context": { "p": { "@id": "http://ex/p", "@type": "@id" } },
+  "p": ""
+}

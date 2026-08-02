@@ -58,4 +58,5 @@ var (
 	ErrPreserveUnsupported       = errors.New("@preserve is not supported")
 	ErrInvalid                   = errors.New("context validation failed")
 	ErrDisallowedKeyword         = errors.New("disallowed keyword present in document")
+	ErrInvalidTypeMappingValue   = errors.New("invalid type mapping value")
 )

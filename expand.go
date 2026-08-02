@@ -538,37 +538,28 @@ mainLoop:
 
 			switch expProp {
 			case KeywordID:
-				// 13.4.3)
-				if jsonutil.IsNull(value) {
+				// 13.4.3) 13.4.3.1)
+				var id ID
+				if err := json.Unmarshal(value, &id); err != nil {
 					return ErrInvalidIDValue
 				}
 
-				var s string
-				if err := json.Unmarshal(value, &s); err != nil {
-					// 13.4.3.1)
-					return ErrInvalidIDValue
-				}
-
-				if s == "" {
-					return ErrInvalidIDValue
-				}
-
-				iri, err := p.expandIRI(ctx, activeCtx, s, true, false, nil, nil)
+				res, err := p.expandIRI(ctx, activeCtx, id.Value, true, false, nil, nil)
 				if err != nil {
 					return err
 				}
 
-				if iri == "" {
-					// This is theoretically against spec, as empty string is
-					// moonlighting for null and in theory we should output an
-					// expanded form document with `id: null`. However, that's
-					// invalid JSON-LD, so instead we error out here because
-					// if someone does that it's BS or shenanigans.
+				if p.rejectEmptyOrRelativeID && iri.IsRelative(res) {
+					return ErrInvalidIDValue
+				}
+
+				// see https://github.com/w3c/json-ld-api/issues/480
+				if id.Value != "" && res == "" {
 					return ErrInvalidIDValue
 				}
 
 				// 13.4.3.2)
-				result.ID = iri
+				result.ID = NewID(res)
 			case KeywordType:
 				// 13.4.4)
 				if !jsonutil.IsString(value) && !jsonutil.IsArray(value) {
@@ -981,7 +972,7 @@ mainLoop:
 							if err != nil {
 								return err
 							}
-							item.ID = idx
+							item.ID = NewID(idx)
 						} else if slices.Contains(cnt, KeywordType) {
 							// 13.8.3.7.5)
 							item.Type = append([]string{expIdx}, item.Type...)
@@ -1196,16 +1187,26 @@ func (p *Processor) expandValue(
 			return Node{}, ErrInvalidLocalContext
 		}
 
-		if v == "" {
-			break
-		}
-
 		u, err := p.expandIRI(ctx, ldContext, v, true, def.Type == KeywordVocab, nil, nil)
 		if err != nil {
 			return result, err
 		}
 
-		result.ID = u
+		if def.Type == KeywordID &&
+			p.rejectEmptyOrRelativeID &&
+			iri.IsRelative(u) {
+			return Node{}, ErrInvalidIDValue
+		}
+
+		// see: https://github.com/w3c/json-ld-api/issues/480
+		if v != "" && u == "" {
+			if def.Type == KeywordID {
+				return Node{}, ErrInvalidIDValue
+			}
+			return Node{}, ErrInvalidTypeMappingValue
+		}
+
+		result.ID = NewID(u)
 		return result, nil
 	case KeywordNone, "":
 		// 4)

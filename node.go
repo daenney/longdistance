@@ -19,7 +19,7 @@ type Properties map[string][]Node
 type Node struct {
 	Direction string         // @direction / KeywordDirection
 	Graph     []Node         // @graph / KeywordGraph
-	ID        string         // @id / KeywordID
+	ID        ID             // @id / KeywordID
 	Included  []Node         // @included / KeywordIncluded
 	Index     string         // @index / KeywordIndex
 	Language  string         // @language / KeywordLanguage
@@ -40,7 +40,7 @@ type Internal interface {
 	~struct {
 		Direction  string
 		Graph      []Node
-		ID         string
+		ID         ID
 		Included   []Node
 		Index      string
 		Language   string
@@ -51,6 +51,40 @@ type Internal interface {
 		Value      jsontext.Value
 		Properties Properties
 	}
+}
+
+// ID is a JSON-LD @id.
+//
+// Set reports whether an @id was present, and Value holds the original value. ID can
+// never be null, so this type can't represent that. The [ID.UnmarshalJSONFrom] will
+// reject a null.
+type ID struct {
+	Value string
+	Set   bool
+}
+
+// NewID returns an ID.
+func NewID(v string) ID {
+	return ID{Value: v, Set: true}
+}
+
+func (i ID) MarshalJSONTo(enc *jsontext.Encoder) error {
+	return enc.WriteToken(jsontext.String(i.Value))
+}
+
+func (i *ID) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+	if dec.PeekKind() == jsontext.KindNull {
+		return ErrInvalidIDValue
+	}
+
+	var s string
+	if err := json.UnmarshalDecode(dec, &s); err != nil {
+		return err
+	}
+
+	i.Value = s
+	i.Set = true
+	return nil
 }
 
 // PropertyKeys returns the key of every proprety set on [Node].
@@ -68,7 +102,7 @@ func (n *Node) PropertyKeys() iter.Seq[string] {
 
 		y(KeywordDirection, n.Direction != "")
 		y(KeywordGraph, n.Graph != nil)
-		y(KeywordID, n.ID != "")
+		y(KeywordID, n.ID.Set)
 		y(KeywordIncluded, n.Included != nil)
 		y(KeywordIndex, n.Index != "")
 		y(KeywordLanguage, n.Language != "")
@@ -120,7 +154,7 @@ func (n *Node) Has(prop string) bool {
 
 	switch prop {
 	case KeywordID:
-		return n.ID != ""
+		return n.ID.Set
 	case KeywordValue:
 		return n.Value != nil
 	case KeywordLanguage:
@@ -155,7 +189,7 @@ func (n *Node) IsZero() bool {
 
 	return n.Direction == "" &&
 		n.Graph == nil &&
-		n.ID == "" &&
+		!n.ID.Set &&
 		n.Included == nil &&
 		n.Index == "" &&
 		n.Language == "" &&
@@ -178,7 +212,7 @@ func (n *Node) IsSubject() bool {
 		return false
 	}
 
-	if n.ID == "" {
+	if !n.ID.Set {
 		return false
 	}
 
@@ -196,7 +230,7 @@ func (n *Node) IsSubjectReference() bool {
 		return false
 	}
 
-	if n.ID == "" {
+	if !n.ID.Set {
 		return false
 	}
 
@@ -298,7 +332,7 @@ func (n *Node) Len() int {
 
 	incr(n.Direction != "")
 	incr(n.Graph != nil)
-	incr(n.ID != "")
+	incr(n.ID.Set)
 	incr(n.Included != nil)
 	incr(n.Index != "")
 	incr(n.Language != "")
@@ -320,8 +354,13 @@ func (n *Node) MarshalJSONTo(enc *jsontext.Encoder) error {
 		return enc.WriteToken(jsontext.EndObject)
 	}
 
-	if err := encStringKV(enc, KeywordID, n.ID); err != nil {
-		return err
+	if n.ID.Set {
+		if err := cmp.Or(
+			enc.WriteToken(jsontext.String(KeywordID)),
+			n.ID.MarshalJSONTo(enc),
+		); err != nil {
+			return err
+		}
 	}
 
 	if err := encStringKV(enc, KeywordIndex, n.Index); err != nil {

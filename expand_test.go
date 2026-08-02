@@ -543,6 +543,53 @@ func TestExpandCustom(t *testing.T) {
 			out:  LoadData(t, "longdistance/expansion/value-lang-type/out.json"),
 		},
 		{
+			name: "empty-string @id is preserved as a same-document reference",
+			proc: ld.NewProcessor(),
+			in:   LoadData(t, "longdistance/expansion/id-empty-string/in.jsonld"),
+			out:  LoadData(t, "longdistance/expansion/id-empty-string/out.jsonld"),
+		},
+		{
+			name: "empty-string @id is rejected with WithRejectEmptyOrRelativeID",
+			proc: ld.NewProcessor(
+				ld.WithRejectEmptyOrRelativeID(true),
+			),
+			in:  LoadData(t, "longdistance/expansion/id-empty-string/in.jsonld"),
+			err: ld.ErrInvalidIDValue,
+		},
+		{
+			name: "empty string with @type @id resolves against the base",
+			proc: ld.NewProcessor(
+				ld.WithRejectEmptyOrRelativeID(true),
+				ld.WithBaseIRI("http://example.org/"),
+			),
+			in:  LoadData(t, "longdistance/expansion/id-type-empty-string/in.jsonld"),
+			out: LoadData(t, "longdistance/expansion/id-type-empty-string/out.jsonld"),
+		},
+		{
+			name: "empty string with @type @id and no base is preserved",
+			proc: ld.NewProcessor(),
+			in:   LoadData(t, "longdistance/expansion/id-type-empty-no-base/in.jsonld"),
+			out:  LoadData(t, "longdistance/expansion/id-type-empty-no-base/out.jsonld"),
+		},
+		{
+			name: "empty string with @type @id and no base is rejected with WithRejectEmptyOrRelativeID",
+			proc: ld.NewProcessor(ld.WithRejectEmptyOrRelativeID(true)),
+			in:   LoadData(t, "longdistance/expansion/id-type-empty-no-base/in.jsonld"),
+			err:  ld.ErrInvalidIDValue,
+		},
+		{
+			name: "keyword-lookalike coerced via @type @id is rejected",
+			proc: ld.NewProcessor(),
+			in:   LoadData(t, "longdistance/expansion/id-type-keyword-lookalike/in.jsonld"),
+			err:  ld.ErrInvalidIDValue,
+		},
+		{
+			name: "keyword-lookalike coerced via @type @vocab is rejected",
+			proc: ld.NewProcessor(),
+			in:   LoadData(t, "longdistance/expansion/vocab-type-keyword-lookalike/in.jsonld"),
+			err:  ld.ErrInvalidTypeMappingValue,
+		},
+		{
 			name: "disallowed keyword @included",
 			proc: ld.NewProcessor(
 				ld.WithDisallowedKeywords(ld.KeywordIncluded),

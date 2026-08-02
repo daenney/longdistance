@@ -1,0 +1,4 @@
+{
+  "@context": { "p": { "@id": "http://ex/p", "@type": "@vocab" } },
+  "p": "@ignoreMe"
+}

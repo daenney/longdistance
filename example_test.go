@@ -32,7 +32,7 @@ func Example() {
 
 	entry := doc[0]
 
-	fmt.Println("Object ID:", entry.ID)
+	fmt.Println("Object ID:", entry.ID.Value)
 	fmt.Println("Object Type:", entry.Type)
 	fmt.Println("Property lookup:", string(entry.Properties["https://example.org#name"][0].Value))
 
