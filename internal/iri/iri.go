@@ -50,7 +50,7 @@ func Relative(base string, iri string) (string, error) {
 	}
 
 	relpaths := make([]string, 0, len(baseParts)-prefix)
-	for range baseParts[prefix+1:] {
+	for range baseParts[min(prefix+1, len(baseParts)):] {
 		relpaths = append(relpaths, "..")
 	}
 
