@@ -503,6 +503,10 @@ func (p *Processor) compactArray(
 
 	// 3.2)
 	for _, elem := range elems {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		// 3.2.1)
 		compactedItem, err := p.compactNode(ctx, activeContext, activeProperty, elem, compactArrays)
 		if err != nil {
@@ -636,6 +640,10 @@ func (p *Processor) compactNode(
 
 	// 12)
 	for expandedProperty := range element.PropertySet() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		// 12.1)
 		if expandedProperty == KeywordID {
 			// 12.1.1)

@@ -207,6 +207,10 @@ func (p *Processor) context(
 	first := true
 
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		switch t := tok.(type) {
 		case json.Delim:
 			// 5.1) Nested arrays are invalid
@@ -214,7 +218,7 @@ func (p *Processor) context(
 				return nil, ErrInvalidLocalContext
 			}
 
-			ctxObj, err := p.decodeCtxObj(rawCtx)
+			ctxObj, err := p.decodeCtxObj(ctx, rawCtx)
 			if err != nil {
 				return nil, err
 			}
@@ -454,12 +458,16 @@ type contextObj struct {
 	Terms     map[string]term
 }
 
-func (p *Processor) decodeCtxObj(dec *json.Decoder) (*contextObj, error) {
+func (p *Processor) decodeCtxObj(ctx context.Context, dec *json.Decoder) (*contextObj, error) {
 	obj := &contextObj{
 		Terms: make(map[string]term),
 	}
 
 	for dec.More() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		tok, err := dec.Token()
 		if err != nil {
 			return nil, errors.Join(err, ErrInvalidLocalContext)

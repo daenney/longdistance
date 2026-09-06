@@ -198,6 +198,10 @@ func (p *Processor) expandArray(
 
 	// 5.2)
 	for dec.More() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		tok, err := dec.Token()
 		if err != nil {
 			return nil, err
@@ -303,6 +307,10 @@ func (p *Processor) expandObject(
 	obj := make(json.Object, 8)
 
 	for dec.More() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		tok, err := dec.Token()
 		if err != nil {
 			return nil, err

@@ -153,6 +153,10 @@ func (p *Processor) createTerm(
 	defined map[string]termState,
 	opts createTermOptions,
 ) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	// 1)
 	if state := defined[term]; state != termUndefined {
 		if state == termDefined {
