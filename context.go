@@ -376,6 +376,8 @@ func (p *Processor) context(
 				newOpts := newCtxProcessingOpts()
 				newOpts.remotes = slices.Clone(opts.remotes)
 				newOpts.validate = opts.validate
+				// https://github.com/w3c/json-ld-api/issues/708
+				newOpts.override = opts.override
 				remoteDec := json.NewDecoder(bytes.NewReader(doc.Context))
 				res, err := p.context(
 					ctx,
