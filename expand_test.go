@@ -540,7 +540,7 @@ func TestExpandCustom(t *testing.T) {
 		{
 			name: "value cannot have @type and @language",
 			proc: ld.NewProcessor(
-				ld.WithRemoteContextLoader(StaticLoader(t, "as.jsonld")),
+				ld.WithRemoteContextLoader(StaticLoader(t, ASURL, "as.jsonld")),
 				ld.WithLogger(slog.New(slog.DiscardHandler)),
 			),
 			in:  LoadData(t, "longdistance/value-lang-type/in.json"),

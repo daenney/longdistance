@@ -17,7 +17,10 @@ import (
 
 var dump = flag.Bool("dump", false, "dump the compacted or expanded JSON on test failure")
 
-const ASURL = "https://www.w3.org/ns/activitystreams"
+const (
+	ASURL    = "https://www.w3.org/ns/activitystreams"
+	Secv1URL = "https://w3id.org/security/v1"
+)
 
 func ProcessContext(tb testing.TB, lctx json.RawMessage, iri string) *ld.Context {
 	tb.Helper()
@@ -31,15 +34,25 @@ func ProcessContext(tb testing.TB, lctx json.RawMessage, iri string) *ld.Context
 	return ctx
 }
 
-func StaticLoader(tb testing.TB, file string) ld.RemoteContextLoaderFunc {
-	data := LoadData(tb, file)
+func StaticLoader(tb testing.TB, pair ...string) ld.RemoteContextLoaderFunc {
+	tb.Helper()
+
+	if len(pair)%2 != 0 {
+		tb.Fatal("context must be IRI <-> file pairs")
+	}
+
+	docs := make(map[string]ld.Document, len(pair)/2)
+
+	for i := 0; i < len(pair); i += 2 {
+		docs[pair[i]] = ld.Document{
+			URL:     pair[i],
+			Context: LoadData(tb, pair[i+1]),
+		}
+	}
 
 	return func(ctx context.Context, s string) (ld.Document, error) {
-		if s == ASURL {
-			return ld.Document{
-				URL:     ASURL,
-				Context: data,
-			}, nil
+		if doc, ok := docs[s]; ok {
+			return doc, nil
 		}
 
 		tb.Fatal("unknown remote context")

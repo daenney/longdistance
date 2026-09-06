@@ -1,0 +1,70 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1",
+    {
+      "manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
+      "toot": "http://joinmastodon.org/ns#",
+      "featured": {
+        "@id": "toot:featured",
+        "@type": "@id"
+      },
+      "featuredTags": {
+        "@id": "toot:featuredTags",
+        "@type": "@id"
+      },
+      "alsoKnownAs": {
+        "@id": "as:alsoKnownAs",
+        "@type": "@id"
+      },
+      "movedTo": {
+        "@id": "as:movedTo",
+        "@type": "@id"
+      },
+      "schema": "http://schema.org#",
+      "PropertyValue": "schema:PropertyValue",
+      "value": "schema:value",
+      "discoverable": "toot:discoverable",
+      "suspended": "toot:suspended",
+      "memorial": "toot:memorial",
+      "indexable": "toot:indexable",
+      "attributionDomains": {
+        "@id": "toot:attributionDomains",
+        "@type": "@id"
+      }
+    }
+  ],
+  "id": "https://example.com/update/1",
+  "type": "Update",
+  "actor": "https://example.com/actor",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "object": {
+    "id": "https://example.com/person/1",
+    "type": "Person",
+    "following": "https://example.com/person/1/following",
+    "followers": "https://example.com/person/1/followers",
+    "inbox": "https://example.com/person/1/inbox",
+    "outbox": "https://example.com/person/1/outbox",
+    "featured": "https://example.com/person/1/featured",
+    "featuredTags": "https://example.com/person/1/tags",
+    "preferredUsername": "person1",
+    "name": "Per Son",
+    "summary": "A real person",
+    "url": "https://example.com/@person1",
+    "manuallyApprovesFollowers": false,
+    "discoverable": true,
+    "indexable": true,
+    "published": "2020-12-31T23:00:00Z",
+    "memorial": false,
+    "suspended": false,
+    "publicKey": {
+      "id": "https://example.com/person/1/key",
+      "owner": "https://example.com/person/1",
+      "publicKeyPem": "SUPER_SECRET_VALUE"
+    },
+    "tag": ["cool"],
+    "endpoints": {
+      "sharedInbox": "https://example.com/shared"
+    }
+  }
+}
