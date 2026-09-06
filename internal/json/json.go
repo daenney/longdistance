@@ -23,7 +23,8 @@ var (
 	beginString = byte('"')
 	null        = RawMessage(`null`)
 
-	emptyArray = []byte(`[]`)
+	emptyArray  = []byte(`[]`)
+	emptyString = []byte(`""`)
 )
 
 func IsNull(in RawMessage) bool {
@@ -40,6 +41,10 @@ func IsArray(in RawMessage) bool {
 
 func IsEmptyArray(in RawMessage) bool {
 	return bytes.Equal(in, emptyArray)
+}
+
+func IsEmptyString(in RawMessage) bool {
+	return bytes.Equal(in, emptyString)
 }
 
 func IsMap(in RawMessage) bool {
@@ -75,6 +80,19 @@ func MakeArray(in RawMessage) RawMessage {
 	buf = append(buf, '[')
 	buf = append(buf, in...)
 	buf = append(buf, ']')
+
+	return buf
+}
+
+func MakeString(in string) RawMessage {
+	if len(in) == 0 {
+		return emptyString
+	}
+
+	buf := make([]byte, 0, len(in)+2)
+	buf = append(buf, '"')
+	buf = append(buf, in...)
+	buf = append(buf, '"')
 
 	return buf
 }

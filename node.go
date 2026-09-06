@@ -1,7 +1,10 @@
 package longdistance
 
 import (
-	"encoding/json"
+	"bytes"
+	"slices"
+
+	"sourcery.dny.nu/longdistance/internal/json"
 )
 
 // Properties is a key-to-array-of-[Node] map.
@@ -394,4 +397,150 @@ func (n *Node) AddNodes(property string, nodes ...Node) {
 // SetNodes overrides the nodes stored in property.
 func (n *Node) SetNodes(property string, nodes ...Node) {
 	n.Properties[property] = nodes
+}
+
+type compactNode struct {
+	Attr       string
+	Value      json.RawMessage
+	Properties []compactNode
+	Members    []compactNode
+	Context    json.RawMessage
+	IsID       bool
+	IsType     bool
+}
+
+func (c *compactNode) get(key string) (*compactNode, bool) {
+	for i := range c.Properties {
+		if c.Properties[i].Attr == key {
+			return &c.Properties[i], true
+		}
+	}
+	return nil, false
+}
+
+// child returns the child for attr, creating it if absent.
+func (c *compactNode) child(attr string) *compactNode {
+	if e, ok := c.get(attr); ok {
+		return e
+	}
+
+	c.Properties = append(c.Properties, compactNode{
+		Attr:       attr,
+		Properties: []compactNode{},
+	})
+
+	return &c.Properties[len(c.Properties)-1]
+}
+
+func (c *compactNode) del(key string) {
+	for i := range c.Properties {
+		if c.Properties[i].Attr == key {
+			c.Properties = slices.Delete(c.Properties, i, i+1)
+			return
+		}
+	}
+}
+
+// addValue adds item for key to object.
+//
+// If key already exists it becomes an array. Otherwise arrayification is
+// dictated by asArray.
+func (c *compactNode) addValue(key string, item compactNode, asArray bool) {
+	if e, ok := c.get(key); ok {
+		if e.Members == nil {
+			*e = compactNode{Attr: e.Attr, Members: []compactNode{*e}}
+		}
+
+		e.Members = append(e.Members, item)
+		return
+	}
+
+	if asArray && item.Members == nil {
+		c.Properties = append(c.Properties, compactNode{
+			Attr:    key,
+			Members: []compactNode{item},
+		})
+		return
+	}
+
+	item.Attr = key
+	c.Properties = append(c.Properties, item)
+}
+
+// MarshalJSON marshals the compact node.
+//
+// In the case of an object, key order is fixed:
+//   - @context, if present, comes first.
+//   - @type (or its alias) follows.
+//   - @id (or its alias) comes next.
+//   - Remaining keys are sorted in lexicographically least order.
+//
+// The order of @context, @type and @id ensures that the resulting output can be processed
+// in a streaming manner by a JSON-LD processor.
+func (c compactNode) MarshalJSON() ([]byte, error) {
+	switch {
+	case c.Members != nil:
+		return json.Marshal(c.Members)
+	case c.Properties != nil:
+		var buf bytes.Buffer
+
+		buf.WriteString("{")
+		if c.Context != nil {
+			buf.Write(json.MakeString(KeywordContext))
+			buf.WriteString(":")
+			buf.Write(c.Context)
+			buf.WriteString(",")
+		}
+
+		rank := func(p compactNode) int {
+			switch {
+			case p.IsID:
+				return 1
+			case p.IsType:
+				return 0
+			default:
+				return 2
+			}
+		}
+
+		slices.SortFunc(c.Properties, func(a, b compactNode) int {
+			if r := rank(a) - rank(b); r != 0 {
+				return r
+			}
+			return sortedLeast(a.Attr, b.Attr)
+		})
+
+		for i, val := range c.Properties {
+			if i != 0 {
+				buf.WriteString(",")
+			}
+
+			buf.Write(json.MakeString(val.Attr))
+			buf.WriteString(":")
+
+			data, err := json.Marshal(val)
+			if err != nil {
+				return nil, err
+			}
+
+			buf.Write(data)
+		}
+
+		buf.WriteString("}")
+		return buf.Bytes(), nil
+	default:
+		return c.Value, nil
+	}
+}
+
+func (c *compactNode) asString() (string, bool) {
+	if !json.IsString(c.Value) {
+		return "", false
+	}
+
+	if json.IsEmptyString(c.Value) {
+		return "", true
+	}
+
+	return string(c.Value[1 : len(c.Value)-1]), true
 }

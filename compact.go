@@ -5,7 +5,6 @@ import (
 	"cmp"
 	"context"
 	"io"
-	"maps"
 	"net/url"
 	"slices"
 	"strings"
@@ -431,77 +430,6 @@ func langDirMatch(keyword string, value *Node, expected string) bool {
 	return expected == "" || expected == KeywordNull
 }
 
-func (p *Processor) compactValue(
-	ctx *Context,
-	prop string,
-	value *Node,
-) (any, error) {
-	// 1) 2) and 3) aren't needed
-
-	// 4)
-	language := cmp.Or(
-		ctx.defs[prop].Language,
-		ctx.defaultLang,
-	)
-
-	// 5)
-	direction := cmp.Or(
-		ctx.defs[prop].Direction,
-		ctx.defaultDirection,
-	)
-
-	def, defOK := ctx.defs[prop]
-
-	if value.Has(KeywordID) &&
-		(value.Len() == 1 ||
-			(value.Len() == 2 && value.Has(KeywordIndex))) {
-		// 6)
-		if defOK && def.Type != "" {
-			var res string
-			var err error
-
-			switch def.Type {
-			case KeywordID:
-				res, err = p.compactIRI(ctx,
-					value.ID,
-					nil,
-					false, false)
-			case KeywordVocab:
-				res, err = p.compactIRI(ctx,
-					value.ID,
-					nil,
-					true, false)
-			default:
-				return nil, nil
-			}
-			return res, err
-		} else {
-			return nil, nil
-		}
-	} else if defOK && value.Has(KeywordType) && slices.Contains(value.Type, def.Type) {
-		// 7)
-		return value.Value, nil
-	} else if (defOK && def.Type == KeywordNone) || value.Has(KeywordType) && !slices.Contains(value.Type, def.Type) {
-		// 8) don't need to do anything here
-		return nil, nil
-	} else if value.IsValue() && !json.IsString(value.Value) {
-		// 9)
-		if !value.Has(KeywordIndex) || slices.Contains(def.Container, KeywordIndex) {
-			// 9.1)
-			return value.Value, nil
-		}
-	} else if value.IsValue() && langDirMatch(KeywordLanguage, value, language) && langDirMatch(KeywordDirection, value, direction) {
-		// 10)
-		if !value.Has(KeywordIndex) || (defOK && slices.Contains(def.Container, KeywordIndex)) {
-			// 10.1)
-			return value.Value, nil
-		}
-	}
-
-	// 11) doesn't seem necessary
-	return nil, nil
-}
-
 func (p *Processor) Compact(
 	ctx context.Context,
 	dst io.Writer,
@@ -525,7 +453,7 @@ func (p *Processor) Compact(
 		return enc.Encode(document)
 	}
 
-	res, err := p.compact(
+	res, err := p.compactArray(
 		ctx,
 		ldCtx,
 		"",
@@ -541,37 +469,73 @@ func (p *Processor) Compact(
 		return enc.Encode(json.RawMessage(`{}`))
 	}
 
-	if v, isObject := res.(map[string]any); isObject && p.compactArrays {
-		if len(compactionCtx) > 2 {
-			v[KeywordContext] = compactionCtx
+	if res.Properties == nil || !p.compactArrays {
+		alias, err := p.compactIRI(ldCtx, KeywordGraph, nil, true, false)
+		if err != nil {
+			return err
 		}
 
-		return enc.Encode(v)
-	}
-
-	alias, err := p.compactIRI(ldCtx, KeywordGraph, nil, true, false)
-	if err != nil {
-		return err
-	}
-
-	result := map[string]any{
-		alias: res,
+		res.Attr = alias
+		res = &compactNode{Properties: []compactNode{*res}}
 	}
 
 	if len(compactionCtx) > 2 {
-		result[KeywordContext] = compactionCtx
+		res.Context = compactionCtx
 	}
 
-	return enc.Encode(result)
+	return enc.Encode(res)
 }
 
-func (p *Processor) compact(
+func (p *Processor) compactArray(
 	ctx context.Context,
 	activeContext *Context,
 	activeProperty string,
-	element any,
+	elems []Node,
 	compactArrays bool,
-) (any, error) {
+) (*compactNode, error) {
+	var activeTermDefinition Term
+	if activeProperty != "" {
+		activeTermDefinition = activeContext.defs[activeProperty]
+	}
+
+	// 3.1)
+	result := make([]compactNode, 0, len(elems))
+
+	// 3.2)
+	for _, elem := range elems {
+		// 3.2.1)
+		compactedItem, err := p.compactNode(ctx, activeContext, activeProperty, elem, compactArrays)
+		if err != nil {
+			return nil, err
+		}
+		// 3.2.2)
+		if compactedItem != nil {
+			result = append(result, *compactedItem)
+		}
+	}
+
+	// 3.3)
+	if len(result) != 1 || !compactArrays || activeProperty == KeywordGraph || activeProperty == KeywordSet {
+		return &compactNode{Members: result}, nil
+	}
+
+	if slices.Contains(activeTermDefinition.Container, KeywordList) ||
+		slices.Contains(activeTermDefinition.Container, KeywordSet) {
+		return &compactNode{Members: result}, nil
+	}
+
+	// 3.4)
+	elem := result[0]
+	return &elem, nil
+}
+
+func (p *Processor) compactNode(
+	ctx context.Context,
+	activeContext *Context,
+	activeProperty string,
+	element Node,
+	compactArrays bool,
+) (*compactNode, error) {
 	var activeTermDefinition Term
 	if activeProperty != "" {
 		activeTermDefinition = activeContext.defs[activeProperty]
@@ -580,52 +544,12 @@ func (p *Processor) compact(
 	// 1)
 	typeScopedContext := activeContext
 
-	// 2)
-	elemArray, isArray := element.([]Node)
-	object, isObject := element.(Node)
-	if !isArray && !isObject {
-		return element, nil
-	}
-
-	// 3)
-	if isArray {
-		// 3.1)
-		result := make([]any, 0, len(elemArray))
-
-		// 3.2)
-		for _, elem := range elemArray {
-			// 3.2.1)
-			compactedItem, err := p.compact(ctx, activeContext, activeProperty, elem, compactArrays)
-			if err != nil {
-				return nil, err
-			}
-			// 3.2.2)
-			if compactedItem != nil {
-				result = append(result, compactedItem)
-			}
-		}
-
-		// 3.3)
-		if len(result) != 1 || !compactArrays || activeProperty == KeywordGraph || activeProperty == KeywordSet {
-			return result, nil
-		}
-
-		if slices.Contains(activeTermDefinition.Container, KeywordList) ||
-			slices.Contains(activeTermDefinition.Container, KeywordSet) {
-			return result, nil
-		}
-
-		// 3.4)
-		return result[0], nil
-	}
-
-	// 4) We're guaranteed to have an object here. We've checked that it's not
-	// an array and not an object, and we've already handled the array case.
+	// 4) We're guaranteed to have an object here.
 
 	// 5)
 	if activeContext.previousCtx != nil &&
-		!object.Has(KeywordValue) &&
-		(!object.Has(KeywordID) || object.Len() > 1) {
+		!element.Has(KeywordValue) &&
+		(!element.Has(KeywordID) || element.Len() > 1) {
 		activeContext = activeContext.previousCtx
 	}
 
@@ -643,12 +567,12 @@ func (p *Processor) compact(
 	}
 
 	// 7)
-	if object.Has(KeywordValue) || object.Has(KeywordID) {
+	if element.Has(KeywordValue) || element.Has(KeywordID) {
 		if activeTermDefinition.Type == KeywordJSON {
-			return object.Value, nil
+			return &compactNode{Value: element.Value}, nil
 		}
 
-		value, err := p.compactValue(activeContext, activeProperty, &object)
+		value, err := p.compactValue(activeContext, activeProperty, &element)
 		if err != nil {
 			return nil, err
 		}
@@ -659,13 +583,13 @@ func (p *Processor) compact(
 	}
 
 	// 8)
-	if object.IsList() &&
+	if element.IsList() &&
 		slices.Contains(activeTermDefinition.Container, KeywordList) {
-		return p.compact(
+		return p.compactArray(
 			ctx,
 			activeContext,
 			activeProperty,
-			object.List,
+			element.List,
 			compactArrays,
 		)
 	}
@@ -674,12 +598,12 @@ func (p *Processor) compact(
 	insideReverse := activeProperty == KeywordReverse
 
 	// 10)
-	result := map[string]any{}
+	result := &compactNode{Properties: []compactNode{}}
 
 	// 11)
-	if object.Has(KeywordType) {
-		compactedTypes := make([]string, 0, len(object.Type))
-		for _, t := range object.Type {
+	if element.Has(KeywordType) {
+		compactedTypes := make([]string, 0, len(element.Type))
+		for _, t := range element.Type {
 			res, err := p.compactIRI(activeContext, t, nil, true, false)
 			if err != nil {
 				return nil, err
@@ -711,28 +635,34 @@ func (p *Processor) compact(
 	}
 
 	// 12)
-	for expandedProperty := range object.PropertySet() {
+	for expandedProperty := range element.PropertySet() {
 		// 12.1)
 		if expandedProperty == KeywordID {
 			// 12.1.1)
-			cv, err := p.compactIRI(activeContext, object.ID, nil, false, false)
+			cv, err := p.compactIRI(activeContext, element.ID, nil, false, false)
 			if err != nil {
 				return nil, err
 			}
+
 			// 12.1.2)
 			alias, err := p.compactIRI(activeContext, KeywordID, nil, true, false)
 			if err != nil {
 				return nil, err
 			}
+
 			// 12.1.3)
-			result[alias] = cv
+			result.Properties = append(result.Properties, compactNode{
+				Attr:  alias,
+				Value: json.MakeString(cv),
+				IsID:  true,
+			})
 			continue
 		}
 
 		if expandedProperty == KeywordType {
 			// 12.2.1) 12.2.2)
-			vt := make([]string, 0, len(object.Type))
-			for _, t := range object.Type {
+			vt := make([]string, 0, len(element.Type))
+			for _, t := range element.Type {
 				res, err := p.compactIRI(typeScopedContext, t, nil, true, false)
 				if err != nil {
 					return nil, err
@@ -753,11 +683,17 @@ func (p *Processor) compact(
 			}
 
 			// 12.2.5)
+			entry := compactNode{Attr: alias, IsType: true}
 			if asArray || len(vt) > 1 {
-				result[alias] = vt
+				entry.Members = make([]compactNode, 0, len(vt))
+				for _, t := range vt {
+					entry.Members = append(entry.Members, compactNode{Value: json.MakeString(t)})
+				}
 			} else {
-				result[alias] = vt[0]
+				entry.Value = json.MakeString(vt[0])
 			}
+
+			result.Properties = append(result.Properties, entry)
 
 			// 12.2.6)
 			continue
@@ -766,9 +702,9 @@ func (p *Processor) compact(
 		// 12.3)
 		if expandedProperty == KeywordReverse {
 			// 12.3.1)
-			res := make([]any, 0, len(object.Reverse))
-			for k, elem := range object.Reverse {
-				compactedValue, err := p.compact(
+			final := &compactNode{Properties: []compactNode{}}
+			for k, elem := range element.Reverse {
+				compactedValue, err := p.compactNode(
 					ctx,
 					activeContext,
 					KeywordReverse,
@@ -781,44 +717,42 @@ func (p *Processor) compact(
 					return nil, err
 				}
 
-				obj, objOK := compactedValue.(map[string]any)
-
 				// 12.3.2)
-				if objOK {
-					for prop, val := range obj {
-						if rdef, rok := activeContext.defs[prop]; rok && rdef.Reverse {
-							asArray := !compactArrays
-							if slices.Contains(rdef.Container, KeywordSet) {
-								asArray = true
-							}
+				if compactedValue == nil || compactedValue.Properties == nil {
+					continue
+				}
 
-							valArray, valIsArray := val.([]any)
-							if asArray {
-								if valIsArray {
-									result[prop] = valArray
-								} else {
-									result[prop] = []any{val}
-								}
-							} else {
-								result[prop] = val
-							}
-							delete(obj, prop)
+				for _, entry := range compactedValue.Properties {
+					prop := entry.Attr
+					if rdef, rok := activeContext.defs[prop]; rok && rdef.Reverse {
+						asArray := !compactArrays
+						if slices.Contains(rdef.Container, KeywordSet) {
+							asArray = true
 						}
+
+						rev := entry
+						if asArray && rev.Members == nil {
+							rev = compactNode{Attr: entry.Attr, Members: []compactNode{rev}}
+						}
+
+						if e, ok := result.get(prop); ok {
+							*e = rev
+						} else {
+							result.Properties = append(result.Properties, rev)
+						}
+						continue
 					}
 
-					if len(obj) != 0 {
-						res = append(res, obj)
+					if e, ok := final.get(prop); ok {
+						*e = entry
+					} else {
+						final.Properties = append(final.Properties, entry)
 					}
 				}
 			}
 
-			if len(res) == 0 {
+			if len(final.Properties) == 0 {
 				continue
-			}
-
-			final := res[0].(map[string]any)
-			for _, elem := range res[1:] {
-				maps.Copy(final, elem.(map[string]any))
 			}
 
 			// 12.3.3)
@@ -826,7 +760,10 @@ func (p *Processor) compact(
 			if err != nil {
 				return nil, err
 			}
-			result[alias] = final
+			result.Properties = append(result.Properties, compactNode{
+				Attr:       alias,
+				Properties: final.Properties,
+			})
 
 			// 12.3.4)
 			continue
@@ -853,31 +790,36 @@ func (p *Processor) compact(
 			}
 
 			// 12.6.2)
-			var value any
+			var value json.RawMessage
 			switch expandedProperty {
 			case KeywordDirection:
-				value = object.Direction
+				value = json.MakeString(element.Direction)
 			case KeywordIndex:
-				value = object.Index
+				value = json.MakeString(element.Index)
 			case KeywordLanguage:
-				value = object.Language
+				value = json.MakeString(element.Language)
 			case KeywordValue:
-				value = object.Value
+				value = element.Value
 			}
-			result[alias] = value
+
+			result.Properties = append(result.Properties, compactNode{
+				Attr:  alias,
+				Value: value,
+			})
+
 			continue
 		}
 
 		var expandedValue []Node
 		switch expandedProperty {
 		case KeywordList:
-			expandedValue = object.List
+			expandedValue = element.List
 		case KeywordGraph:
-			expandedValue = object.Graph
+			expandedValue = element.Graph
 		case KeywordIncluded:
-			expandedValue = object.Included
+			expandedValue = element.Included
 		default:
-			expandedValue = object.Properties[expandedProperty]
+			expandedValue = element.Properties[expandedProperty]
 		}
 
 		// 12.7
@@ -892,39 +834,19 @@ func (p *Processor) compact(
 				return nil, err
 			}
 
-			var nestResult map[string]any
-
-			if edef, eok := activeContext.defs[itemActiveProperty]; eok && edef.Nest != "" {
-				// 12.7.2)
-				term, err := p.expandIRI(ctx, activeContext, edef.Nest, false, true, nil, nil)
-				if err != nil {
-					return nil, err
-				}
-				// 12.7.2.1)
-				if term != KeywordNest {
-					return nil, ErrInvalidNestValue
-				}
-
-				term = edef.Nest
-
-				// 12.7.2.2)
-				if _, ok := result[term]; !ok {
-					result[term] = map[string]any{}
-				}
-
-				// 12.7.2.3)
-				nestResult = result[term].(map[string]any)
-			} else {
-				// 12.7.3)
-				nestResult = result
+			nestResult, err := p.nestFor(ctx, activeContext, result, itemActiveProperty)
+			if err != nil {
+				return nil, err
 			}
 
 			// 12.7.4)
-			nestResult[itemActiveProperty] = []any{}
+			nestResult.Properties = append(nestResult.Properties, compactNode{
+				Attr:    itemActiveProperty,
+				Members: []compactNode{},
+			})
 		}
 
 		// 12.8)
-
 		for _, expandedItem := range expandedValue {
 			// 12.8.1)
 			itemActiveProperty, err := p.compactIRI(
@@ -937,32 +859,10 @@ func (p *Processor) compact(
 				return nil, err
 			}
 
-			// 12.8.2)
-			var nestResult map[string]any
-
-			if edef, eok := activeContext.defs[itemActiveProperty]; eok && edef.Nest != "" {
-				// 12.8.2.1)
-				term, err := p.expandIRI(ctx, activeContext, edef.Nest, false, true, nil, nil)
-				if err != nil {
-					return nil, err
-				}
-
-				if term != KeywordNest {
-					return nil, ErrInvalidNestValue
-				}
-
-				term = edef.Nest
-
-				// 12.8.2.2)
-				if _, ok := result[term]; !ok {
-					result[term] = map[string]any{}
-				}
-
-				// 12.8.2.3)
-				nestResult = result[term].(map[string]any)
-			} else {
-				// 12.8.3)
-				nestResult = result
+			// 12.8.2) 12.8.3)
+			nestResult, err := p.nestFor(ctx, activeContext, result, itemActiveProperty)
+			if err != nil {
+				return nil, err
 			}
 
 			itemDef := activeContext.defs[itemActiveProperty]
@@ -977,38 +877,33 @@ func (p *Processor) compact(
 			}
 
 			// 12.8.6)
-			var itemToCompact any
+			var compactedItem *compactNode
 			if expandedItem.IsList() {
-				itemToCompact = expandedItem.List
+				compactedItem, err = p.compactArray(ctx, activeContext, itemActiveProperty, expandedItem.List, compactArrays)
 			} else if expandedItem.IsGraph() {
-				itemToCompact = expandedItem.Graph
+				compactedItem, err = p.compactArray(ctx, activeContext, itemActiveProperty, expandedItem.Graph, compactArrays)
 			} else {
-				itemToCompact = expandedItem
+				compactedItem, err = p.compactNode(ctx, activeContext, itemActiveProperty, expandedItem, compactArrays)
 			}
 
-			compactedItem, err := p.compact(
-				ctx,
-				activeContext,
-				itemActiveProperty,
-				itemToCompact,
-				compactArrays,
-			)
 			if err != nil {
 				return nil, err
 			}
 
+			if compactedItem == nil {
+				continue
+			}
+
 			// 12.8.7)
 			if expandedItem.IsList() {
-				_, isArray := compactedItem.([]any)
 				// 12.8.7.1)
-				if !isArray {
-					compactedItem = []any{compactedItem}
+				if compactedItem.Members == nil {
+					compactedItem = &compactNode{Members: []compactNode{*compactedItem}}
 				}
 
 				// 12.8.7.2)
 				if !slices.Contains(container, KeywordList) {
 					// 12.8.7.2.1)
-					compactedMap := map[string]any{}
 					alias, err := p.compactIRI(
 						activeContext,
 						KeywordList,
@@ -1017,7 +912,11 @@ func (p *Processor) compact(
 					if err != nil {
 						return nil, err
 					}
-					compactedMap[alias] = compactedItem
+
+					compactedMap := compactNode{Properties: []compactNode{{
+						Attr:    alias,
+						Members: compactedItem.Members,
+					}}}
 
 					// 12.8.7.2.2)
 					if expandedItem.Has(KeywordIndex) {
@@ -1029,23 +928,37 @@ func (p *Processor) compact(
 						if err != nil {
 							return nil, err
 						}
-						compactedMap[iAlias] = expandedItem.Index
+
+						compactedMap.Properties = append(compactedMap.Properties, compactNode{
+							Attr:  iAlias,
+							Value: json.MakeString(expandedItem.Index),
+						})
 					}
+
 					// 12.8.7.2.3)
-					addToMap(nestResult, itemActiveProperty, compactedMap, asArray)
+					nestResult.addValue(itemActiveProperty, compactedMap, asArray)
 				} else {
 					// 12.8.7.3)
-					nestResult[itemActiveProperty] = compactedItem
+					compactedItem.Attr = itemActiveProperty
+					if e, ok := nestResult.get(itemActiveProperty); ok {
+						*e = *compactedItem
+					} else {
+						nestResult.Properties = append(nestResult.Properties, *compactedItem)
+					}
 				}
 			} else if expandedItem.IsGraph() {
 				// 12.8.8)
 				if slices.Contains(container, KeywordGraph) &&
 					slices.Contains(container, KeywordID) {
 					// 12.8.8.1)
-					mapObject, ok := nestResult[itemActiveProperty].(map[string]any)
+					mapObject, ok := nestResult.get(itemActiveProperty)
 					if !ok {
 						// 12.8.8.1.1)
-						mapObject = map[string]any{}
+						nestResult.Properties = append(nestResult.Properties, compactNode{
+							Attr:       itemActiveProperty,
+							Properties: []compactNode{},
+						})
+						mapObject = &nestResult.Properties[len(nestResult.Properties)-1]
 					}
 
 					// 12.8.8.1.2)
@@ -1060,27 +973,31 @@ func (p *Processor) compact(
 					}
 
 					// 12.8.8.1.3)
-					addToMap(mapObject, alias, compactedItem, asArray)
-					nestResult[itemActiveProperty] = mapObject
+					mapObject.addValue(alias, *compactedItem, asArray)
 				} else if slices.Contains(container, KeywordGraph) &&
 					slices.Contains(container, KeywordIndex) && expandedItem.IsSimpleGraph() {
 					// 12.8.8.2)
 
-					mapObject, ok := nestResult[itemActiveProperty].(map[string]any)
+					mapObject, ok := nestResult.get(itemActiveProperty)
 					if !ok {
 						// 12.8.8.2.1)
-						mapObject = map[string]any{}
+						nestResult.Properties = append(nestResult.Properties, compactNode{
+							Attr:       itemActiveProperty,
+							Properties: []compactNode{},
+						})
+
+						mapObject = &nestResult.Properties[len(nestResult.Properties)-1]
 					}
 
 					// 12.8.8.2.2)
 					key := cmp.Or(expandedItem.Index, KeywordNone)
 
 					// 12.8.8.2.3)
-					addToMap(mapObject, key, compactedItem, asArray)
-					nestResult[itemActiveProperty] = mapObject
+					mapObject.addValue(key, *compactedItem, asArray)
 				} else if slices.Contains(container, KeywordGraph) && expandedItem.IsSimpleGraph() {
 					// 12.8.8.3)
-					clist, cok := compactedItem.([]any)
+					cok := compactedItem.Members != nil
+					clist := compactedItem.Members
 
 					// 12.8.8.3.1)
 					if cok && len(clist) > 1 {
@@ -1088,29 +1005,31 @@ func (p *Processor) compact(
 						if err != nil {
 							return nil, err
 						}
-						compactedItem = map[string]any{
-							alias: compactedItem,
-						}
+						compactedItem = &compactNode{Properties: []compactNode{{
+							Attr:    alias,
+							Members: clist,
+						}}}
 					}
 
 					// 12.8.8.3.2)
-					if v, ok := nestResult[itemActiveProperty]; ok {
-						vlist, vok := v.([]any)
-						if !vok {
-							vlist = []any{v}
+					if e, ok := nestResult.get(itemActiveProperty); ok {
+						if e.Members == nil {
+							*e = compactNode{Attr: e.Attr, Members: []compactNode{*e}}
 						}
 						if cok {
-							vlist = append(vlist, clist...)
+							e.Members = append(e.Members, clist...)
 						} else {
-							vlist = append(vlist, compactedItem)
+							e.Members = append(e.Members, *compactedItem)
 						}
-						nestResult[itemActiveProperty] = vlist
 					} else {
-						_, ncok := compactedItem.([]any)
-						if asArray && !ncok {
-							nestResult[itemActiveProperty] = []any{compactedItem}
+						if asArray && compactedItem.Members == nil {
+							nestResult.Properties = append(nestResult.Properties, compactNode{
+								Attr:    itemActiveProperty,
+								Members: []compactNode{*compactedItem},
+							})
 						} else {
-							nestResult[itemActiveProperty] = compactedItem
+							compactedItem.Attr = itemActiveProperty
+							nestResult.Properties = append(nestResult.Properties, *compactedItem)
 						}
 					}
 				} else {
@@ -1121,13 +1040,12 @@ func (p *Processor) compact(
 					}
 
 					// 12.8.8.4.1)
-					compactedItem := map[string]any{
-						alias: compactedItem,
-					}
+					compactedItem.Attr = alias
+					newItem := compactNode{Properties: []compactNode{*compactedItem}}
 
 					// 12.8.8.4.2)
 					if expandedItem.Has(KeywordID) {
-						alias, err := p.compactIRI(activeContext, KeywordID, nil, true, false)
+						idAlias, err := p.compactIRI(activeContext, KeywordID, nil, true, false)
 						if err != nil {
 							return nil, err
 						}
@@ -1135,30 +1053,43 @@ func (p *Processor) compact(
 						if err != nil {
 							return nil, err
 						}
-						compactedItem[alias] = val
+
+						newItem.Properties = append(newItem.Properties, compactNode{
+							Attr:  idAlias,
+							Value: json.MakeString(val),
+							IsID:  true,
+						})
 					}
 
 					// 12.8.8.4.3)
 					if expandedItem.Has(KeywordIndex) {
-						alias, err := p.compactIRI(activeContext, KeywordIndex, nil, true, false)
+						idxAlias, err := p.compactIRI(activeContext, KeywordIndex, nil, true, false)
 						if err != nil {
 							return nil, err
 						}
-						compactedItem[alias] = expandedItem.Index
+
+						newItem.Properties = append(newItem.Properties, compactNode{
+							Attr:  idxAlias,
+							Value: json.MakeString(expandedItem.Index),
+						})
 					}
 
 					// 12.8.8.4.4)
-					addToMap(nestResult, itemActiveProperty, compactedItem, asArray)
+					nestResult.addValue(itemActiveProperty, newItem, asArray)
 				}
 			} else if !slices.Contains(container, KeywordGraph) && (slices.Contains(container, KeywordLanguage) ||
 				slices.Contains(container, KeywordIndex) ||
 				slices.Contains(container, KeywordID) ||
 				slices.Contains(container, KeywordType)) {
 				// 12.8.9)
-				mapObject, ok := nestResult[itemActiveProperty].(map[string]any)
+				mapObject, ok := nestResult.get(itemActiveProperty)
 				if !ok {
 					// 12.8.9.1)
-					mapObject = map[string]any{}
+					nestResult.Properties = append(nestResult.Properties, compactNode{
+						Attr:       itemActiveProperty,
+						Properties: []compactNode{},
+					})
+					mapObject = &nestResult.Properties[len(nestResult.Properties)-1]
 				}
 
 				key := KeywordNull // this is invalid so we'll immediate see bugs
@@ -1189,7 +1120,7 @@ func (p *Processor) compact(
 
 				// 12.8.9.4)
 				if expandedItem.IsValue() && slices.Contains(container, KeywordLanguage) {
-					compactedItem = expandedItem.Value
+					compactedItem = &compactNode{Value: expandedItem.Value}
 					if expandedItem.Has(KeywordLanguage) {
 						mapKey = expandedItem.Language
 					}
@@ -1212,99 +1143,86 @@ func (p *Processor) compact(
 					}
 
 					// 12.8.9.6.2)
-					if compactedObject, isObject := compactedItem.(map[string]any); isObject {
-						if value, vok := compactedObject[containerKey]; vok {
-							if nv, nok := value.(json.RawMessage); nok {
-								var m string
-								if err := json.Unmarshal(nv, &m); err != nil {
-									return nil, err
+					if compactedItem.Properties != nil {
+						if value, vok := compactedItem.get(containerKey); vok {
+							if value.Members != nil {
+								if s, ok := value.Members[0].asString(); ok {
+									mapKey = s
 								}
-								mapKey = m
-								delete(compactedObject, containerKey)
-							}
-							if nv, nok := value.(string); nok {
-								mapKey = nv
-								delete(compactedObject, containerKey)
-							}
-							if nv, nok := value.([]any); nok {
-								if v, vok := nv[0].(json.RawMessage); vok {
-									var m string
-									if err := json.Unmarshal(v, &m); err != nil {
-										return nil, err
-									}
-									mapKey = m
+								switch {
+								case len(value.Members) == 2:
+									nv := value.Members[1]
+									nv.Attr = containerKey
+									*value = nv
+								case len(value.Members) > 2:
+									value.Members = value.Members[1:]
+								default:
+									compactedItem.del(containerKey)
 								}
-
-								if v, vok := nv[0].(string); vok {
-									mapKey = v
-								}
-
-								lnv := len(nv)
-								if lnv == 2 {
-									compactedObject[containerKey] = nv[1]
-								} else if lnv > 2 {
-									compactedObject[containerKey] = nv[1:]
-								} else {
-									delete(compactedObject, containerKey)
-								}
+							} else if s, ok := value.asString(); ok {
+								mapKey = s
+								compactedItem.del(containerKey)
 							}
 						}
-						compactedItem = compactedObject
 					}
 				} else if slices.Contains(container, KeywordID) {
 					// 12.8.9.7)
-					if compactedObject, ok := compactedItem.(map[string]any); ok {
-						if value, vok := compactedObject[containerKey]; vok {
-							mapKey = value.(string)
-							delete(compactedObject, containerKey)
+					if compactedItem.Properties != nil {
+						if value, vok := compactedItem.get(containerKey); vok {
+							if s, ok := value.asString(); ok {
+								mapKey = s
+							}
+							compactedItem.del(containerKey)
 						}
-						compactedItem = compactedObject
 					}
 				} else if slices.Contains(container, KeywordType) {
 					// 12.8.9.8)
 
-					if compactedObject, isObject := compactedItem.(map[string]any); isObject {
+					if compactedItem.Properties != nil {
 						// 12.8.9.8.1)
-						if value, vok := compactedObject[containerKey]; vok {
-							if vlist, lok := value.([]string); lok {
-								mapKey = vlist[0]
-								if len(vlist) == 2 {
-									compactedObject[containerKey] = vlist[1]
-								} else if len(vlist) > 2 {
-									compactedObject[containerKey] = vlist[1:]
+						if value, vok := compactedItem.get(containerKey); vok {
+							if value.Members != nil {
+								if s, ok := value.Members[0].asString(); ok {
+									mapKey = s
 								}
-							}
-							if s, sok := value.(string); sok {
+								switch {
+								case len(value.Members) == 2:
+									nv := value.Members[1]
+									nv.Attr = containerKey
+									*value = nv
+								case len(value.Members) > 2:
+									value.Members = value.Members[1:]
+								}
+							} else if s, ok := value.asString(); ok {
 								mapKey = s
 								// 12.8.9.8.2)
-								delete(compactedObject, containerKey)
+								compactedItem.del(containerKey)
 							}
 						}
 
 						// 12.8.9.8.4)
-						if len(compactedObject) == 1 {
-							for k := range compactedObject {
-								expIri, err := p.expandIRI(ctx, activeContext, k, false, true, nil, nil)
+						if len(compactedItem.Properties) == 1 {
+							k := compactedItem.Properties[0].Attr
+							expIri, err := p.expandIRI(ctx, activeContext, k, false, true, nil, nil)
+							if err != nil {
+								return nil, err
+							}
+
+							if expIri == KeywordID {
+								res, err := p.compactNode(
+									ctx,
+									activeContext,
+									itemActiveProperty,
+									Node{ID: expandedItem.ID},
+									false,
+								)
 								if err != nil {
 									return nil, err
 								}
-
-								if expIri == KeywordID {
-									res, err := p.compact(
-										ctx,
-										activeContext,
-										itemActiveProperty,
-										Node{ID: expandedItem.ID},
-										false,
-									)
-									if err != nil {
-										return nil, err
-									}
+								if res != nil {
 									compactedItem = res
 								}
 							}
-						} else {
-							compactedItem = compactedObject
 						}
 					}
 				}
@@ -1319,26 +1237,28 @@ func (p *Processor) compact(
 				}
 
 				// 12.8.9.10)
-				addToMap(mapObject, mapKey, compactedItem, asArray)
-				nestResult[itemActiveProperty] = mapObject
+				mapObject.addValue(mapKey, *compactedItem, asArray)
 			} else {
 				// 12.8.10)
-				if v, ok := nestResult[itemActiveProperty]; ok {
-					vlist, ok := v.([]any)
-					if !ok {
-						vlist = []any{v}
+				if e, ok := nestResult.get(itemActiveProperty); ok {
+					if e.Members == nil {
+						*e = compactNode{Attr: e.Attr, Members: []compactNode{*e}}
 					}
-					vlist = append(vlist, compactedItem)
-					nestResult[itemActiveProperty] = vlist
+					e.Members = append(e.Members, *compactedItem)
 				} else {
 					if asArray {
 						if itemDef.Type == KeywordJSON && json.IsArray(expandedItem.Value) {
-							nestResult[itemActiveProperty] = compactedItem
+							compactedItem.Attr = itemActiveProperty
+							nestResult.Properties = append(nestResult.Properties, *compactedItem)
 						} else {
-							nestResult[itemActiveProperty] = []any{compactedItem}
+							nestResult.Properties = append(nestResult.Properties, compactNode{
+								Attr:    itemActiveProperty,
+								Members: []compactNode{*compactedItem},
+							})
 						}
 					} else {
-						nestResult[itemActiveProperty] = compactedItem
+						compactedItem.Attr = itemActiveProperty
+						nestResult.Properties = append(nestResult.Properties, *compactedItem)
 					}
 				}
 			}
@@ -1347,30 +1267,116 @@ func (p *Processor) compact(
 	return result, nil
 }
 
-func addToMap(m map[string]any, key string, item any, asArray bool) {
-	if existing, ok := m[key]; ok {
-		vlist, vok := existing.([]any)
-		if !vok {
-			vlist = []any{existing}
-		}
+func (p *Processor) compactValue(
+	ctx *Context,
+	prop string,
+	value *Node,
+) (*compactNode, error) {
+	// 1) 2) and 3) aren't needed
 
-		vlist = append(vlist, item)
-		m[key] = vlist
+	def, defOK := ctx.defs[prop]
 
-		return
-	}
+	// 4)
+	language := cmp.Or(
+		def.Language,
+		ctx.defaultLang,
+	)
 
-	if asArray {
-		if _, isArray := item.([]any); isArray {
-			m[key] = item
+	// 5)
+	direction := cmp.Or(
+		def.Direction,
+		ctx.defaultDirection,
+	)
+
+	if value.Has(KeywordID) &&
+		(value.Len() == 1 ||
+			(value.Len() == 2 && value.Has(KeywordIndex))) {
+		// 6)
+		if defOK && def.Type != "" {
+			var res string
+			var err error
+
+			switch def.Type {
+			case KeywordID:
+				res, err = p.compactIRI(ctx,
+					value.ID,
+					nil,
+					false, false)
+			case KeywordVocab:
+				res, err = p.compactIRI(ctx,
+					value.ID,
+					nil,
+					true, false)
+			default:
+				return nil, nil
+			}
+
+			if err != nil {
+				return nil, err
+			}
+
+			return &compactNode{Value: json.MakeString(res)}, nil
 		} else {
-			m[key] = []any{item}
+			return nil, nil
 		}
-
-		return
+	} else if defOK && value.Has(KeywordType) && slices.Contains(value.Type, def.Type) {
+		// 7)
+		return &compactNode{Value: value.Value}, nil
+	} else if (defOK && def.Type == KeywordNone) || value.Has(KeywordType) && !slices.Contains(value.Type, def.Type) {
+		// 8) don't need to do anything here
+		return nil, nil
+	} else if value.IsValue() && !json.IsString(value.Value) {
+		// 9)
+		if !value.Has(KeywordIndex) || slices.Contains(def.Container, KeywordIndex) {
+			// 9.1)
+			return &compactNode{Value: value.Value}, nil
+		}
+	} else if value.IsValue() && langDirMatch(KeywordLanguage, value, language) && langDirMatch(KeywordDirection, value, direction) {
+		// 10)
+		if !value.Has(KeywordIndex) || (defOK && slices.Contains(def.Container, KeywordIndex)) {
+			// 10.1)
+			return &compactNode{Value: value.Value}, nil
+		}
 	}
 
-	m[key] = item
+	// 11) doesn't seem necessary
+	return nil, nil
+}
+
+func (p *Processor) nestFor(
+	ctx context.Context,
+	activeContext *Context,
+	result *compactNode,
+	itemActiveProperty string,
+) (*compactNode, error) {
+	edef, eok := activeContext.defs[itemActiveProperty]
+	if !eok || edef.Nest == "" {
+		return result, nil
+	}
+
+	// 12.8.2.1)
+	term, err := p.expandIRI(ctx, activeContext, edef.Nest, false, true, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if term != KeywordNest {
+		return nil, ErrInvalidNestValue
+	}
+
+	term = edef.Nest
+
+	// 12.8.2.2) 12.8.2.3)
+	if e, ok := result.get(term); ok {
+		return e, nil
+	}
+
+	result.Properties = append(result.Properties, compactNode{
+		Attr:       term,
+		Properties: []compactNode{},
+	})
+
+	return &result.Properties[len(result.Properties)-1], nil
 }
 
 // sortedLeast sorts strings based on smallest first and if they're

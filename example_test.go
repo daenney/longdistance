@@ -69,5 +69,5 @@ func Example() {
 	// Object Type: [https://example.org/type]
 	// Property lookup: "Alice"
 	// Expanded form: [{"@id":"https://example.org/id","@type":["https://example.org/type"],"https://example.org#name":[{"@value":"Alice"}]}]
-	// Compacted form: {"@context":{"ex":"https://example.org#","id":"@id","type":"@type","name":"ex:name"},"id":"https://example.org/id","name":"Alice","type":"https://example.org/type"}
+	// Compacted form: {"@context":{"ex":"https://example.org#","id":"@id","type":"@type","name":"ex:name"},"type":"https://example.org/type","id":"https://example.org/id","name":"Alice"}
 }
