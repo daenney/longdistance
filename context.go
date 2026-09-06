@@ -230,6 +230,10 @@ func (p *Processor) context(
 
 			// 3)
 			if !opts.propagate && result.previousCtx == nil {
+				if result == activeCtx {
+					result = activeCtx.clone()
+				}
+
 				result.previousCtx = activeCtx
 			}
 

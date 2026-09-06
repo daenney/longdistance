@@ -586,6 +586,24 @@ func TestExpandCustom(t *testing.T) {
 			in:  LoadData(t, "w3c/expand/0066-in.jsonld"),
 			err: ld.ErrDisallowedKeyword,
 		},
+		{
+			name: "@propagate in context which is a map stops propagation into child nodes",
+			proc: ld.NewProcessor(),
+			in:   LoadData(t, "longdistance/expand/propagate-top-level/in.jsonld"),
+			out:  LoadData(t, "longdistance/expand/propagate-top-level/out.jsonld"),
+		},
+		{
+			name: "@propagate on first-element array context stops propagation into child nodes",
+			proc: ld.NewProcessor(),
+			in:   LoadData(t, "longdistance/expand/propagate-first-element/in.jsonld"),
+			out:  LoadData(t, "longdistance/expand/propagate-first-element/out.jsonld"),
+		},
+		{
+			name: "@propagate on not-first-element array context is ignored",
+			proc: ld.NewProcessor(),
+			in:   LoadData(t, "longdistance/expand/propagate-not-first-element/in.jsonld"),
+			out:  LoadData(t, "longdistance/expand/propagate-not-first-element/out.jsonld"),
+		},
 	}
 
 	for _, tc := range tests {

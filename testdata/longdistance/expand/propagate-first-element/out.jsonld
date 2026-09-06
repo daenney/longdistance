@@ -1,0 +1,6 @@
+[
+  {
+    "http://ex/foo": [{"@value": "a"}],
+    "http://ex/child": [{}]
+  }
+]
