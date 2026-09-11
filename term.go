@@ -221,17 +221,6 @@ func (p *Processor) createTerm(
 	// 6)
 	oldDef, oldDefOK := activeCtx.defs[term]
 	delete(activeCtx.defs, term)
-	if !oldDefOK {
-		// check for aliasses
-		for _, def := range activeCtx.defs {
-			if def.IRI != "" && def.IRI == term {
-				oldDef = def
-				oldDefOK = true
-				delete(activeCtx.defs, term)
-				break
-			}
-		}
-	}
 
 	// 10)
 	termDef := Term{
