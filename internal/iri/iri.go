@@ -74,13 +74,16 @@ func Relative(base string, iri string) (string, error) {
 }
 
 func EndsInGenDelim(s string) bool {
-	delims := map[string]struct{}{
-		":": {}, "/": {}, "?": {}, "#": {}, "[": {}, "]": {}, "@": {},
+	if len(s) == 0 {
+		return false
 	}
 
-	last := s[len(s)-1:]
-	_, ok := delims[last]
-	return ok
+	switch s[len(s)-1:] {
+	case ":", "/", "?", "#", "[", "]", "@":
+		return true
+	default:
+		return false
+	}
 }
 
 func IsRelative(s string) bool {
