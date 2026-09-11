@@ -21,9 +21,9 @@
 // # JSON typing
 //
 // In order to provide a type-safe implementation, JSON scalars (numbers,
-// strings, booleans) are not decoded and stored as [json.RawMessage] instead.
-// You can use the optionally specified type to decide how to decode the value.
-// When the type is unspecified, the following rules can be used:
+// strings, booleans) are not decoded and stored as [encoding/json/jsontext.Value]
+// instead. You can use the optionally specified type to decide how to decode the
+// value. When the type is unspecified, the following rules can be used:
 //   - Numbers with a zero fraction and smaller than 10^21 are int64.
 //   - Numbers with a decimal point or a value greater than 10^21 are float64.
 //   - Booleans are booleans.

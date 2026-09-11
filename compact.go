@@ -4,13 +4,15 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 	"net/url"
 	"slices"
 	"strings"
 
 	"sourcery.dny.nu/longdistance/internal/iri"
-	"sourcery.dny.nu/longdistance/internal/json"
+	"sourcery.dny.nu/longdistance/internal/jsonutil"
 )
 
 func (p *Processor) compactIRI(
@@ -433,24 +435,24 @@ func langDirMatch(keyword string, value *Node, expected string) bool {
 func (p *Processor) Compact(
 	ctx context.Context,
 	dst io.Writer,
-	compactionCtx json.RawMessage,
+	compactionCtx jsontext.Value,
 	document []Node,
 	documentURL string,
 ) error {
-	dec := json.NewDecoder(bytes.NewReader(compactionCtx))
+	dec := jsontext.NewDecoder(bytes.NewBuffer(compactionCtx))
 	ldCtx, err := p.context(ctx, nil, dec, documentURL, newCtxProcessingOpts())
 	if err != nil {
 		return err
 	}
 
-	enc := json.NewEncoder(dst)
+	enc := jsontext.NewEncoder(dst)
 
 	if len(document) == 0 {
-		return enc.Encode(json.RawMessage(`{}`))
+		return enc.WriteValue(jsontext.Value(`{}`))
 	}
 
 	if ldCtx == nil {
-		return enc.Encode(document)
+		return json.MarshalEncode(enc, document)
 	}
 
 	res, err := p.compactArray(
@@ -466,7 +468,7 @@ func (p *Processor) Compact(
 	}
 
 	if res == nil {
-		return enc.Encode(json.RawMessage(`{}`))
+		return enc.WriteValue(jsontext.Value(`{}`))
 	}
 
 	if res.Properties == nil || !p.compactArrays {
@@ -483,7 +485,7 @@ func (p *Processor) Compact(
 		res.Context = compactionCtx
 	}
 
-	return enc.Encode(res)
+	return json.MarshalEncode(enc, res)
 }
 
 func (p *Processor) compactArray(
@@ -561,7 +563,7 @@ func (p *Processor) compactNode(
 	if activeTermDefinition.Context != nil {
 		opts := newCtxProcessingOpts()
 		opts.override = true
-		dec := json.NewDecoder(bytes.NewReader(activeTermDefinition.Context))
+		dec := jsontext.NewDecoder(bytes.NewBuffer(activeTermDefinition.Context))
 		nctx, err := p.context(ctx, activeContext, dec, activeTermDefinition.BaseIRI, opts)
 		if err != nil {
 			return nil, err
@@ -622,7 +624,7 @@ func (p *Processor) compactNode(
 			if cdef, cok := typeScopedContext.defs[t]; cok && cdef.Context != nil {
 				opts := newCtxProcessingOpts()
 				opts.propagate = false
-				dec := json.NewDecoder(bytes.NewReader(cdef.Context))
+				dec := jsontext.NewDecoder(bytes.NewBuffer(cdef.Context))
 				nctx, err := p.context(
 					ctx,
 					activeContext,
@@ -661,7 +663,7 @@ func (p *Processor) compactNode(
 			// 12.1.3)
 			result.Properties = append(result.Properties, compactNode{
 				Attr:  alias,
-				Value: json.MakeString(cv),
+				Value: jsonutil.MakeString(cv),
 				IsID:  true,
 			})
 			continue
@@ -695,10 +697,10 @@ func (p *Processor) compactNode(
 			if asArray || len(vt) > 1 {
 				entry.Members = make([]compactNode, 0, len(vt))
 				for _, t := range vt {
-					entry.Members = append(entry.Members, compactNode{Value: json.MakeString(t)})
+					entry.Members = append(entry.Members, compactNode{Value: jsonutil.MakeString(t)})
 				}
 			} else {
-				entry.Value = json.MakeString(vt[0])
+				entry.Value = jsonutil.MakeString(vt[0])
 			}
 
 			result.Properties = append(result.Properties, entry)
@@ -798,14 +800,14 @@ func (p *Processor) compactNode(
 			}
 
 			// 12.6.2)
-			var value json.RawMessage
+			var value jsontext.Value
 			switch expandedProperty {
 			case KeywordDirection:
-				value = json.MakeString(element.Direction)
+				value = jsonutil.MakeString(element.Direction)
 			case KeywordIndex:
-				value = json.MakeString(element.Index)
+				value = jsonutil.MakeString(element.Index)
 			case KeywordLanguage:
-				value = json.MakeString(element.Language)
+				value = jsonutil.MakeString(element.Language)
 			case KeywordValue:
 				value = element.Value
 			}
@@ -939,7 +941,7 @@ func (p *Processor) compactNode(
 
 						compactedMap.Properties = append(compactedMap.Properties, compactNode{
 							Attr:  iAlias,
-							Value: json.MakeString(expandedItem.Index),
+							Value: jsonutil.MakeString(expandedItem.Index),
 						})
 					}
 
@@ -1064,7 +1066,7 @@ func (p *Processor) compactNode(
 
 						newItem.Properties = append(newItem.Properties, compactNode{
 							Attr:  idAlias,
-							Value: json.MakeString(val),
+							Value: jsonutil.MakeString(val),
 							IsID:  true,
 						})
 					}
@@ -1078,7 +1080,7 @@ func (p *Processor) compactNode(
 
 						newItem.Properties = append(newItem.Properties, compactNode{
 							Attr:  idxAlias,
-							Value: json.MakeString(expandedItem.Index),
+							Value: jsonutil.MakeString(expandedItem.Index),
 						})
 					}
 
@@ -1255,7 +1257,7 @@ func (p *Processor) compactNode(
 					e.Members = append(e.Members, *compactedItem)
 				} else {
 					if asArray {
-						if itemDef.Type == KeywordJSON && json.IsArray(expandedItem.Value) {
+						if itemDef.Type == KeywordJSON && jsonutil.IsArray(expandedItem.Value) {
 							compactedItem.Attr = itemActiveProperty
 							nestResult.Properties = append(nestResult.Properties, *compactedItem)
 						} else {
@@ -1323,7 +1325,7 @@ func (p *Processor) compactValue(
 				return nil, err
 			}
 
-			return &compactNode{Value: json.MakeString(res)}, nil
+			return &compactNode{Value: jsonutil.MakeString(res)}, nil
 		} else {
 			return nil, nil
 		}
@@ -1333,7 +1335,7 @@ func (p *Processor) compactValue(
 	} else if (defOK && def.Type == KeywordNone) || value.Has(KeywordType) && !slices.Contains(value.Type, def.Type) {
 		// 8) don't need to do anything here
 		return nil, nil
-	} else if value.IsValue() && !json.IsString(value.Value) {
+	} else if value.IsValue() && !jsonutil.IsString(value.Value) {
 		// 9)
 		if !value.Has(KeywordIndex) || slices.Contains(def.Container, KeywordIndex) {
 			// 9.1)

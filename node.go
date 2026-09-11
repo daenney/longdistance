@@ -1,10 +1,12 @@
 package longdistance
 
 import (
-	"bytes"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
+	"maps"
 	"slices"
 
-	"sourcery.dny.nu/longdistance/internal/json"
+	"sourcery.dny.nu/longdistance/internal/jsonutil"
 )
 
 // Properties is a key-to-array-of-[Node] map.
@@ -17,17 +19,17 @@ type Properties map[string][]Node
 // Every supported JSON-LD keyword has a field of its own. All remaining
 // properties are tracked on the Properties field.
 type Node struct {
-	Direction string          // @direction / KeywordDirection
-	Graph     []Node          // @graph / KeywordGraph
-	ID        string          // @id / KeywordID
-	Included  []Node          // @included / KeywordIncluded
-	Index     string          // @index / KeywordIndex
-	Language  string          // @language / KeywordLanguage
-	List      []Node          // @list / KeywordList
-	Reverse   Properties      // @reverse / KeywordReverse
-	Set       []Node          // @set / KeywordSet
-	Type      []string        // @type / KeywordType
-	Value     json.RawMessage // @value / KeywordValue
+	Direction string         // @direction / KeywordDirection
+	Graph     []Node         // @graph / KeywordGraph
+	ID        string         // @id / KeywordID
+	Included  []Node         // @included / KeywordIncluded
+	Index     string         // @index / KeywordIndex
+	Language  string         // @language / KeywordLanguage
+	List      []Node         // @list / KeywordList
+	Reverse   Properties     // @reverse / KeywordReverse
+	Set       []Node         // @set / KeywordSet
+	Type      []string       // @type / KeywordType
+	Value     jsontext.Value // @value / KeywordValue
 
 	Properties Properties // everything else
 }
@@ -48,7 +50,7 @@ type Internal interface {
 		Reverse    Properties
 		Set        []Node
 		Type       []string
-		Value      json.RawMessage
+		Value      jsontext.Value
 		Properties Properties
 	}
 }
@@ -308,20 +310,83 @@ func (n *Node) Len() int {
 	return count
 }
 
-// MarshalJSON encodes to Expanded Document Form.
-func (n *Node) MarshalJSON() ([]byte, error) {
-	if n == nil {
-		return json.Marshal(map[string]any{})
+// MarshalJSONTo encodes to Expanded Document Form.
+func (n *Node) MarshalJSONTo(enc *jsontext.Encoder) error {
+	if err := enc.WriteToken(jsontext.BeginObject); err != nil {
+		return err
 	}
 
-	result := map[string]any{}
+	if n == nil {
+		return enc.WriteToken(jsontext.EndObject)
+	}
+
+	write := func(keyword string, value any) error {
+		if err := enc.WriteToken(jsontext.String(keyword)); err != nil {
+			return err
+		}
+		return json.MarshalEncode(enc, value)
+	}
+
+	if n.Direction != "" {
+		if err := write(KeywordDirection, n.Direction); err != nil {
+			return err
+		}
+	}
+
+	if n.Graph != nil {
+		if err := write(KeywordGraph, n.Graph); err != nil {
+			return err
+		}
+	}
 
 	if n.ID != "" {
-		result[KeywordID] = n.ID
+		if err := write(KeywordID, n.ID); err != nil {
+			return err
+		}
+	}
+
+	if n.Included != nil {
+		if err := write(KeywordIncluded, n.Included); err != nil {
+			return err
+		}
 	}
 
 	if n.Index != "" {
-		result[KeywordIndex] = n.Index
+		if err := write(KeywordIndex, n.Index); err != nil {
+			return err
+		}
+	}
+
+	if n.Language != "" {
+		if err := write(KeywordLanguage, n.Language); err != nil {
+			return err
+		}
+	}
+
+	if n.List != nil {
+		if err := write(KeywordList, n.List); err != nil {
+			return err
+		}
+	}
+
+	if n.Reverse != nil {
+		if err := enc.WriteToken(jsontext.String(KeywordReverse)); err != nil {
+			return err
+		}
+
+		if err := enc.WriteToken(jsontext.BeginObject); err != nil {
+			return err
+		}
+
+		for _, k := range slices.Sorted(maps.Keys(n.Reverse)) {
+			if err := write(k, n.Reverse[k]); err != nil {
+				return err
+			}
+		}
+
+		if err := enc.WriteToken(jsontext.EndObject); err != nil {
+			return err
+		}
 	}
 
 	if n.Type != nil {
@@ -331,42 +396,27 @@ func (n *Node) MarshalJSON() ([]byte, error) {
 		} else {
 			data = n.Type
 		}
-		result[KeywordType] = data
+		if err := write(KeywordType, data); err != nil {
+			return err
+		}
 	}
 
 	if n.Value != nil {
-		result[KeywordValue] = n.Value
+		if err := enc.WriteToken(jsontext.String(KeywordValue)); err != nil {
+			return err
+		}
+		if err := enc.WriteValue(n.Value); err != nil {
+			return err
+		}
 	}
 
-	if n.Language != "" {
-		result[KeywordLanguage] = n.Language
+	for _, k := range slices.Sorted(maps.Keys(n.Properties)) {
+		if err := write(k, n.Properties[k]); err != nil {
+			return err
+		}
 	}
 
-	if n.Direction != "" {
-		result[KeywordDirection] = n.Direction
-	}
-
-	if n.List != nil {
-		result[KeywordList] = n.List
-	}
-
-	if n.Graph != nil {
-		result[KeywordGraph] = n.Graph
-	}
-
-	if n.Included != nil {
-		result[KeywordIncluded] = n.Included
-	}
-
-	if n.Reverse != nil {
-		result[KeywordReverse] = n.Reverse
-	}
-
-	for k, v := range n.Properties {
-		result[k] = v
-	}
-
-	return json.Marshal(result)
+	return enc.WriteToken(jsontext.EndObject)
 }
 
 // GetNodes returns the nodes stored in property.
@@ -401,10 +451,10 @@ func (n *Node) SetNodes(property string, nodes ...Node) {
 
 type compactNode struct {
 	Attr       string
-	Value      json.RawMessage
+	Value      jsontext.Value
 	Properties []compactNode
 	Members    []compactNode
-	Context    json.RawMessage
+	Context    jsontext.Value
 	IsID       bool
 	IsType     bool
 }
@@ -467,7 +517,7 @@ func (c *compactNode) addValue(key string, item compactNode, asArray bool) {
 	c.Properties = append(c.Properties, item)
 }
 
-// MarshalJSON marshals the compact node.
+// MarshalJSONTo marshals the compact node.
 //
 // In the case of an object, key order is fixed:
 //   - @context, if present, comes first.
@@ -477,19 +527,23 @@ func (c *compactNode) addValue(key string, item compactNode, asArray bool) {
 //
 // The order of @context, @type and @id ensures that the resulting output can be processed
 // in a streaming manner by a JSON-LD processor.
-func (c compactNode) MarshalJSON() ([]byte, error) {
+func (c compactNode) MarshalJSONTo(enc *jsontext.Encoder) error {
 	switch {
 	case c.Members != nil:
-		return json.Marshal(c.Members)
+		return json.MarshalEncode(enc, c.Members)
 	case c.Properties != nil:
-		var buf bytes.Buffer
+		if err := enc.WriteToken(jsontext.BeginObject); err != nil {
+			return err
+		}
 
-		buf.WriteString("{")
 		if c.Context != nil {
-			buf.Write(json.MakeString(KeywordContext))
-			buf.WriteString(":")
-			buf.Write(c.Context)
-			buf.WriteString(",")
+			if err := enc.WriteToken(jsontext.String(KeywordContext)); err != nil {
+				return err
+			}
+
+			if err := enc.WriteValue(c.Context); err != nil {
+				return err
+			}
 		}
 
 		rank := func(p compactNode) int {
@@ -510,37 +564,35 @@ func (c compactNode) MarshalJSON() ([]byte, error) {
 			return sortedLeast(a.Attr, b.Attr)
 		})
 
-		for i, val := range c.Properties {
-			if i != 0 {
-				buf.WriteString(",")
+		for _, val := range c.Properties {
+			if err := enc.WriteToken(jsontext.String(val.Attr)); err != nil {
+				return err
 			}
 
-			buf.Write(json.MakeString(val.Attr))
-			buf.WriteString(":")
-
-			data, err := json.Marshal(val)
-			if err != nil {
-				return nil, err
+			if err := json.MarshalEncode(enc, val); err != nil {
+				return err
 			}
-
-			buf.Write(data)
 		}
 
-		buf.WriteString("}")
-		return buf.Bytes(), nil
+		return enc.WriteToken(jsontext.EndObject)
 	default:
-		return c.Value, nil
+		return enc.WriteValue(c.Value)
 	}
 }
 
 func (c *compactNode) asString() (string, bool) {
-	if !json.IsString(c.Value) {
+	if !jsonutil.IsString(c.Value) {
 		return "", false
 	}
 
-	if json.IsEmptyString(c.Value) {
+	if jsonutil.IsEmptyString(c.Value) {
 		return "", true
 	}
 
-	return string(c.Value[1 : len(c.Value)-1]), true
+	res, err := jsontext.AppendUnquote(nil, c.Value)
+	if err != nil {
+		return "", false
+	}
+
+	return string(res), true
 }

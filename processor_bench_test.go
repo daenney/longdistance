@@ -2,16 +2,17 @@ package longdistance_test
 
 import (
 	"bytes"
+	"encoding/json/jsontext"
 	"io"
 	"testing"
 
 	ld "sourcery.dny.nu/longdistance"
-	"sourcery.dny.nu/longdistance/internal/json"
+	"sourcery.dny.nu/longdistance/internal/jsonutil"
 )
 
 func BenchmarkContextProcessing(b *testing.B) {
 	b.Run("context=AS", func(b *testing.B) {
-		ctx := json.RawMessage(json.MakeString(ASURL))
+		ctx := jsontext.Value(jsonutil.MakeString(ASURL))
 
 		b.ReportAllocs()
 		b.SetBytes(int64(len(ctx)))
@@ -21,7 +22,7 @@ func BenchmarkContextProcessing(b *testing.B) {
 		)
 
 		for b.Loop() {
-			_, err := p.Context(b.Context(), bytes.NewReader(ctx), "")
+			_, err := p.Context(b.Context(), bytes.NewBuffer(ctx), "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -29,9 +30,9 @@ func BenchmarkContextProcessing(b *testing.B) {
 	})
 
 	b.Run("context=AS+SecV1", func(b *testing.B) {
-		ctx := json.MakeArray(bytes.Join([][]byte{
-			json.MakeString(ASURL),
-			json.MakeString(Secv1URL),
+		ctx := jsonutil.MakeArray(bytes.Join([][]byte{
+			jsonutil.MakeString(ASURL),
+			jsonutil.MakeString(Secv1URL),
 		},
 			[]byte(`,`)))
 
@@ -48,7 +49,7 @@ func BenchmarkContextProcessing(b *testing.B) {
 		)
 
 		for b.Loop() {
-			_, err := p.Context(b.Context(), bytes.NewReader(ctx), "")
+			_, err := p.Context(b.Context(), bytes.NewBuffer(ctx), "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -58,7 +59,7 @@ func BenchmarkContextProcessing(b *testing.B) {
 
 func BenchmarkContextProcessingCached(b *testing.B) {
 	b.Run("context=AS", func(b *testing.B) {
-		ctx := json.RawMessage(json.MakeString(ASURL))
+		ctx := jsontext.Value(jsonutil.MakeString(ASURL))
 
 		b.ReportAllocs()
 		b.SetBytes(int64(len(ctx)))
@@ -68,7 +69,7 @@ func BenchmarkContextProcessingCached(b *testing.B) {
 		)
 
 		for b.Loop() {
-			_, err := p.Context(b.Context(), bytes.NewReader(ctx), "")
+			_, err := p.Context(b.Context(), bytes.NewBuffer(ctx), "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -76,9 +77,9 @@ func BenchmarkContextProcessingCached(b *testing.B) {
 	})
 
 	b.Run("context=AS+SecV1", func(b *testing.B) {
-		ctx := json.MakeArray(bytes.Join([][]byte{
-			json.MakeString(ASURL),
-			json.MakeString(Secv1URL),
+		ctx := jsonutil.MakeArray(bytes.Join([][]byte{
+			jsonutil.MakeString(ASURL),
+			jsonutil.MakeString(Secv1URL),
 		},
 			[]byte(`,`)))
 
@@ -95,7 +96,7 @@ func BenchmarkContextProcessingCached(b *testing.B) {
 		)
 
 		for b.Loop() {
-			_, err := p.Context(b.Context(), bytes.NewReader(ctx), "")
+			_, err := p.Context(b.Context(), bytes.NewBuffer(ctx), "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -115,7 +116,7 @@ func BenchmarkCompact(b *testing.B) {
 			)
 
 			var err error
-			exp, err = p.Expand(b.Context(), bytes.NewReader(LoadData(b, "observatory/create-note/in.jsonld")), "")
+			exp, err = p.Expand(b.Context(), bytes.NewBuffer(LoadData(b, "observatory/create-note/in.jsonld")), "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -156,7 +157,7 @@ func BenchmarkCompact(b *testing.B) {
 			)
 
 			var err error
-			exp, err = p.Expand(b.Context(), bytes.NewReader(LoadData(b, "observatory/update-person/in.jsonld")), "")
+			exp, err = p.Expand(b.Context(), bytes.NewBuffer(LoadData(b, "observatory/update-person/in.jsonld")), "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -199,7 +200,7 @@ func BenchmarkCompactCached(b *testing.B) {
 			)
 
 			var err error
-			exp, err = p.Expand(b.Context(), bytes.NewReader(LoadData(b, "observatory/create-note/in.jsonld")), "")
+			exp, err = p.Expand(b.Context(), bytes.NewBuffer(LoadData(b, "observatory/create-note/in.jsonld")), "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -241,7 +242,7 @@ func BenchmarkCompactCached(b *testing.B) {
 			)
 
 			var err error
-			exp, err = p.Expand(b.Context(), bytes.NewReader(LoadData(b, "observatory/create-note/in.jsonld")), "")
+			exp, err = p.Expand(b.Context(), bytes.NewBuffer(LoadData(b, "observatory/create-note/in.jsonld")), "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -284,7 +285,7 @@ func BenchmarkExpand(b *testing.B) {
 		)
 
 		for b.Loop() {
-			_, err := p.Expand(b.Context(), bytes.NewReader(doc), "")
+			_, err := p.Expand(b.Context(), bytes.NewBuffer(doc), "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -307,7 +308,7 @@ func BenchmarkExpand(b *testing.B) {
 		)
 
 		for b.Loop() {
-			_, err := p.Expand(b.Context(), bytes.NewReader(doc), "")
+			_, err := p.Expand(b.Context(), bytes.NewBuffer(doc), "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -327,7 +328,7 @@ func BenchmarkExpandCached(b *testing.B) {
 		)
 
 		for b.Loop() {
-			_, err := p.Expand(b.Context(), bytes.NewReader(doc), "")
+			_, err := p.Expand(b.Context(), bytes.NewBuffer(doc), "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -350,7 +351,7 @@ func BenchmarkExpandCached(b *testing.B) {
 		)
 
 		for b.Loop() {
-			_, err := p.Expand(b.Context(), bytes.NewReader(doc), "")
+			_, err := p.Expand(b.Context(), bytes.NewBuffer(doc), "")
 			if err != nil {
 				b.Fatal(err)
 			}

@@ -3,7 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"flag"
 	"fmt"
 	"iter"
@@ -42,14 +43,14 @@ func main() {
 		panic(err)
 	}
 
-	var rawCtx map[string]json.RawMessage
+	var rawCtx map[string]jsontext.Value
 	if err := json.Unmarshal(data, &rawCtx); err != nil {
 		panic(err)
 	}
 
 	proc := ld.NewProcessor()
 
-	res, err := proc.Context(ctx, bytes.NewReader(rawCtx[ld.KeywordContext]), *docIRI)
+	res, err := proc.Context(ctx, bytes.NewBuffer(rawCtx[ld.KeywordContext]), *docIRI)
 	if err != nil {
 		panic(err)
 	}
@@ -145,7 +146,7 @@ func makeTerms(
 		}
 
 		if def.Context != nil {
-			nctx, err := proc.Context(ctx, bytes.NewReader(def.Context), documentURL)
+			nctx, err := proc.Context(ctx, bytes.NewBuffer(def.Context), documentURL)
 			if err != nil {
 				panic(err)
 			}

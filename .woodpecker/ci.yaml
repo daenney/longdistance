@@ -5,12 +5,12 @@ when:
 
 steps:
   - name: prep
-    image: golang:1.24
+    image: golang:1.27
     pull: true
     commands:
       - go mod download
   - name: test
-    image: golang:1.24
+    image: golang:1.27
     depends_on:
       - prep
     commands:

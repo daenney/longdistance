@@ -3,15 +3,15 @@ package longdistance
 import (
 	"bytes"
 	"context"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
-
-	"sourcery.dny.nu/longdistance/internal/json"
 )
 
 func Example() {
 	p := NewProcessor()
 
-	incoming := json.RawMessage(`{
+	incoming := jsontext.Value(`{
 		"@context": {
 			"ex": "https://example.org#",
 			"id": "@id",
@@ -23,7 +23,7 @@ func Example() {
 		"type": "https://example.org/type"
 	}`)
 
-	doc, err := p.Expand(context.TODO(), bytes.NewReader(incoming), "")
+	doc, err := p.Expand(context.TODO(), bytes.NewBuffer(incoming), "")
 	if err != nil {
 		panic(err)
 	}
@@ -47,7 +47,7 @@ func Example() {
 	err = p.Compact(
 		context.TODO(),
 		&dst,
-		json.RawMessage(`{
+		jsontext.Value(`{
 			"ex": "https://example.org#",
 			"id": "@id",
 			"type": "@type",

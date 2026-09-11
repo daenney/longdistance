@@ -2,7 +2,8 @@ package longdistance_test
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -419,9 +420,9 @@ func TestExpand(t *testing.T) {
 			t.Parallel()
 
 			input := LoadData(t, tc.input)
-			var want json.RawMessage
+			var want jsontext.Value
 			if tc.output == "" {
-				want = json.RawMessage(`null`)
+				want = jsontext.Value(`null`)
 			} else {
 				want = LoadData(t, tc.output)
 			}
@@ -435,7 +436,7 @@ func TestExpand(t *testing.T) {
 					t.Skip()
 				}
 
-				var expContext json.RawMessage
+				var expContext jsontext.Value
 				if tc.expandContext != "" {
 					expContext = LoadData(t, tc.expandContext)
 				}
@@ -448,7 +449,7 @@ func TestExpand(t *testing.T) {
 					ld.WithLogger(slog.New(slog.DiscardHandler)),
 				)
 
-				expanded, err := p.Expand(t.Context(), bytes.NewReader(input), docIRI)
+				expanded, err := p.Expand(t.Context(), bytes.NewBuffer(input), docIRI)
 
 				if tc.err != "" && err == nil {
 					t.Fatalf("expected error: %s, got nil", tc.err)
@@ -467,9 +468,9 @@ func TestExpand(t *testing.T) {
 					if err != nil {
 						t.Fatalf("failed to marshal to expanded JSON: %s", err)
 					}
-					if diff := cmp.Diff(want, json.RawMessage(got), JSONDiff()); diff != "" {
+					if diff := cmp.Diff(want, jsontext.Value(got), JSONDiff()); diff != "" {
 						if *dump {
-							data, _ := json.MarshalIndent(expanded, "", "    ")
+							data, _ := json.Marshal(expanded, jsontext.WithIndent("    "))
 							t.Logf("expanded from: %s", string(data))
 						}
 						t.Errorf("expansion mismatch (-want +got):\n%s", diff)
@@ -484,7 +485,7 @@ func TestExpand(t *testing.T) {
 					t.Skip()
 				}
 
-				var expContext json.RawMessage
+				var expContext jsontext.Value
 				if tc.expandContext != "" {
 					expContext = LoadData(t, tc.expandContext)
 				}
@@ -497,7 +498,7 @@ func TestExpand(t *testing.T) {
 					ld.WithLogger(slog.New(slog.DiscardHandler)),
 				)
 
-				expanded, err := p.Expand(t.Context(), bytes.NewReader(input), docIRI)
+				expanded, err := p.Expand(t.Context(), bytes.NewBuffer(input), docIRI)
 
 				if tc.err != "" && err == nil {
 					t.Fatalf("expected error: %s, got nil", tc.err)
@@ -516,9 +517,9 @@ func TestExpand(t *testing.T) {
 					if err != nil {
 						t.Fatalf("failed to marshal to expanded JSON: %s", err)
 					}
-					if diff := cmp.Diff(want, json.RawMessage(got), JSONDiff()); diff != "" {
+					if diff := cmp.Diff(want, jsontext.Value(got), JSONDiff()); diff != "" {
 						if *dump {
-							data, _ := json.MarshalIndent(expanded, "", "    ")
+							data, _ := json.Marshal(expanded, jsontext.WithIndent("    "))
 							t.Logf("expanded from: %s", string(data))
 						}
 						t.Errorf("expansion mismatch (-want +got):\n%s", diff)
@@ -533,8 +534,8 @@ func TestExpandCustom(t *testing.T) {
 	tests := []struct {
 		name string
 		proc *ld.Processor
-		in   json.RawMessage
-		out  json.RawMessage
+		in   jsontext.Value
+		out  jsontext.Value
 		err  error
 	}{
 		{
@@ -592,7 +593,7 @@ func TestExpandCustom(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			nodes, err := tc.proc.Expand(t.Context(), bytes.NewReader(tc.in), "")
+			nodes, err := tc.proc.Expand(t.Context(), bytes.NewBuffer(tc.in), "")
 
 			if !errors.Is(tc.err, err) {
 				t.Fatalf("expected error: %v, got: %v", tc.err, err)
@@ -603,9 +604,9 @@ func TestExpandCustom(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed to marshal to expanded JSON: %s", err)
 				}
-				if diff := cmp.Diff(tc.out, json.RawMessage(got), JSONDiff()); diff != "" {
+				if diff := cmp.Diff(tc.out, jsontext.Value(got), JSONDiff()); diff != "" {
 					if *dump {
-						data, _ := json.MarshalIndent(nodes, "", "    ")
+						data, _ := json.Marshal(nodes, jsontext.WithIndent("    "))
 						t.Logf("expanded from: %s", string(data))
 					}
 					t.Errorf("expansion mismatch (-want +got):\n%s", diff)

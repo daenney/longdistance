@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"log/slog"
 	"slices"
 	"strings"
 
 	"sourcery.dny.nu/longdistance/internal/iri"
-	"sourcery.dny.nu/longdistance/internal/json"
+	"sourcery.dny.nu/longdistance/internal/jsonutil"
 )
 
 // termState tracks the definition state of a term during context processing.
@@ -29,7 +31,7 @@ type Term struct {
 	Reverse   bool
 
 	BaseIRI   string
-	Context   json.RawMessage
+	Context   jsontext.Value
 	Container []string
 	Direction string
 	Index     string
@@ -109,15 +111,15 @@ func newCreateTermOptions() createTermOptions {
 type array[T any] []T
 
 func (a *array[T]) UnmarshalJSON(data []byte) error {
-	if json.IsNull(data) {
+	if jsonutil.IsNull(data) {
 		return nil
 	}
 
-	if json.IsEmptyArray(data) {
+	if jsonutil.IsEmptyArray(data) {
 		return nil
 	}
 
-	data = json.MakeArray(data)
+	data = jsonutil.MakeArray(data)
 
 	var zero []T
 	if err := json.Unmarshal(data, &zero); err != nil {
@@ -136,7 +138,7 @@ type term struct {
 	Reverse        string
 	Container      null[array[string]]
 	Index          string
-	Context        json.RawMessage
+	Context        jsontext.Value
 	Language       null[string]
 	Direction      null[string]
 	Nest           string
@@ -519,7 +521,7 @@ func (p *Processor) createTerm(
 		resolvOpts.override = true
 		resolvOpts.remotes = slices.Clone(opts.remotes)
 		resolvOpts.validate = false
-		ctxDec := json.NewDecoder(bytes.NewReader(input.Context))
+		ctxDec := jsontext.NewDecoder(bytes.NewBuffer(input.Context))
 		_, err := p.context(
 			ctx,
 			activeCtx,

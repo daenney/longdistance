@@ -2,7 +2,8 @@ package longdistance_test
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"strings"
 	"testing"
@@ -280,13 +281,13 @@ func TestCompact(t *testing.T) {
 			src := LoadData(t, tc.input)
 			ctxData := LoadData(t, tc.context)
 			var ctx struct {
-				Context json.RawMessage `json:"@context"`
+				Context jsontext.Value `json:"@context"`
 			}
 			if err := json.Unmarshal(ctxData, &ctx); err != nil {
 				t.Fatal(err.Error())
 			}
 
-			var want json.RawMessage
+			var want jsontext.Value
 			if tc.err == "" {
 				want = LoadData(t, tc.output)
 			}
@@ -307,7 +308,7 @@ func TestCompact(t *testing.T) {
 					ld.WithCompactToRelative(tc.compactToRelative),
 				)
 
-				expanded, err := proc.Expand(t.Context(), bytes.NewReader(src), docIRI)
+				expanded, err := proc.Expand(t.Context(), bytes.NewBuffer(src), docIRI)
 				if err != nil {
 					t.Fatalf("expected successful expand, got: %s", err)
 				}
@@ -329,9 +330,9 @@ func TestCompact(t *testing.T) {
 					}
 				} else {
 					got := dst.Bytes()
-					if diff := cmp.Diff(want, json.RawMessage(got), JSONDiff()); diff != "" {
+					if diff := cmp.Diff(want, jsontext.Value(got), JSONDiff()); diff != "" {
 						if *dump {
-							data, _ := json.MarshalIndent(got, "", "    ")
+							data, _ := json.Marshal(got, jsontext.WithIndent("    "))
 							t.Logf("compacted from: %s", string(data))
 						}
 						t.Errorf("compaction mismatch (-want +got):\n%s", diff)
@@ -353,7 +354,7 @@ func TestCompact(t *testing.T) {
 					ld.WithCompactToRelative(tc.compactToRelative),
 				)
 
-				expanded, err := proc.Expand(t.Context(), bytes.NewReader(src), docIRI)
+				expanded, err := proc.Expand(t.Context(), bytes.NewBuffer(src), docIRI)
 				if err != nil {
 					t.Fatalf("expected successful expand, got: %s", err)
 				}
@@ -375,9 +376,9 @@ func TestCompact(t *testing.T) {
 					}
 				} else {
 					got := dst.Bytes()
-					if diff := cmp.Diff(want, json.RawMessage(got), JSONDiff()); diff != "" {
+					if diff := cmp.Diff(want, jsontext.Value(got), JSONDiff()); diff != "" {
 						if *dump {
-							data, _ := json.MarshalIndent(got, "", "    ")
+							data, _ := json.Marshal(got, jsontext.WithIndent("    "))
 							t.Logf("compacted from: %s", string(data))
 						}
 						t.Errorf("compaction mismatch (-want +got):\n%s", diff)
