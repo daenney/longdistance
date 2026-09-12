@@ -78,9 +78,10 @@ func TestRemapPrefixIRIs(t *testing.T) {
 func TestValidateContextFunc(t *testing.T) {
 	proc := ld.NewProcessor(
 		ld.WithValidateContext(func(ctx *ld.Context) bool {
-			defs := ctx.TermMap()
-			if def, ok := defs["test"]; ok {
-				return def.IRI == "https://example.com/test"
+			for name, def := range ctx.Terms() {
+				if name == "test" && def.IRI != "https://example.com/test" {
+					return false
+				}
 			}
 
 			return true
