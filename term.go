@@ -508,7 +508,7 @@ func (p *Processor) createTerm(
 		// 21.3)
 		resolvOpts := newCtxProcessingOpts()
 		resolvOpts.override = true
-		resolvOpts.remotes = slices.Clone(opts.remotes)
+		resolvOpts.remotes = opts.remotes
 		resolvOpts.validate = false
 		ctxDec := jsontext.NewDecoder(bytes.NewBuffer(input.Context))
 		_, err := p.context(

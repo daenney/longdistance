@@ -289,7 +289,7 @@ func (p *Processor) context(
 				newOpts.baseURL = baseURL
 				newOpts.protected = protected
 				newOpts.override = opts.override
-				newOpts.remotes = slices.Clone(opts.remotes)
+				newOpts.remotes = opts.remotes
 				if err := p.createTerm(
 					ctx,
 					result,
@@ -348,7 +348,9 @@ func (p *Processor) context(
 				}
 				return nil, ErrContextOverflow
 			}
-			opts.remotes = append(opts.remotes, iri)
+			// Clip is load-bearing, it ensures cap=len so the append will allocate.
+			// This avoids cloning opts.remotes everywhere else
+			opts.remotes = append(slices.Clip(opts.remotes), iri)
 
 			cached := false
 			if result.isBlank() {
@@ -373,7 +375,7 @@ func (p *Processor) context(
 
 				// 5.2.6)
 				newOpts := newCtxProcessingOpts()
-				newOpts.remotes = slices.Clone(opts.remotes)
+				newOpts.remotes = opts.remotes
 				newOpts.validate = opts.validate
 				// https://github.com/w3c/json-ld-api/issues/708
 				newOpts.override = opts.override
