@@ -477,12 +477,12 @@ type contextObj struct {
 	Dir       null[string]
 	Propagate null[bool]
 	Protected null[bool]
-	Terms     map[string]term
+	Terms     map[string]*term
 }
 
 func (p *Processor) decodeCtxObj(ctx context.Context, dec *jsontext.Decoder) (*contextObj, error) {
 	obj := &contextObj{
-		Terms: make(map[string]term),
+		Terms: make(map[string]*term),
 	}
 
 	for dec.PeekKind() != jsontext.KindEndObject {
@@ -567,44 +567,44 @@ func (p *Processor) decodeCtxObj(ctx context.Context, dec *jsontext.Decoder) (*c
 	return obj, nil
 }
 
-func (p *Processor) decodeTerm(dec *jsontext.Decoder) (term, error) {
+func (p *Processor) decodeTerm(dec *jsontext.Decoder) (*term, error) {
 	switch dec.PeekKind() {
 	case jsontext.KindNull:
 		if err := dec.SkipValue(); err != nil {
-			return term{}, err
+			return nil, err
 		}
 
-		return term{Null: true, ID: null[string]{Set: true}}, nil
+		return &term{Null: true, ID: null[string]{Set: true}}, nil
 	case jsontext.KindString:
 		tok, err := dec.ReadToken()
 		if err != nil {
-			return term{}, err
+			return nil, err
 		}
 
-		return term{Simple: true, ID: null[string]{Set: true, Valid: true, Value: tok.String()}}, nil
+		return &term{Simple: true, ID: null[string]{Set: true, Valid: true, Value: tok.String()}}, nil
 	case jsontext.KindBeginObject:
 		if _, err := dec.ReadToken(); err != nil {
-			return term{}, err
+			return nil, err
 		}
 
 		return p.decodeTermObj(dec)
 	default:
 		_, err := dec.ReadToken()
-		return term{}, errors.Join(err, ErrInvalidTermDefinition)
+		return nil, errors.Join(err, ErrInvalidTermDefinition)
 	}
 }
 
-func (p *Processor) decodeTermObj(dec *jsontext.Decoder) (term, error) {
+func (p *Processor) decodeTermObj(dec *jsontext.Decoder) (*term, error) {
 	var input term
 
 	for dec.PeekKind() != jsontext.KindEndObject {
 		tok, err := dec.ReadToken()
 		if err != nil {
-			return input, err
+			return nil, err
 		}
 
 		if tok.Kind() != jsontext.KindString {
-			return input, ErrInvalidTermDefinition
+			return nil, ErrInvalidTermDefinition
 		}
 
 		key := tok.String()
@@ -612,22 +612,22 @@ func (p *Processor) decodeTermObj(dec *jsontext.Decoder) (term, error) {
 		switch key {
 		case KeywordID:
 			if err := json.UnmarshalDecode(dec, &input.ID); err != nil {
-				return input, ErrInvalidIRIMapping
+				return nil, ErrInvalidIRIMapping
 			}
 		case KeywordType:
 			if err := json.UnmarshalDecode(dec, &input.Type); err != nil {
-				return input, ErrInvalidTypeMapping
+				return nil, ErrInvalidTypeMapping
 			}
 		case KeywordReverse:
 			if err := json.UnmarshalDecode(dec, &input.Reverse); err != nil {
-				return input, ErrInvalidIRIMapping
+				return nil, ErrInvalidIRIMapping
 			}
 		case KeywordContainer:
 			if p.modeLD10 {
 				// In LD 1.0 it must be a string and only a string
 				var s string
 				if err := json.UnmarshalDecode(dec, &s); err != nil {
-					return input, ErrInvalidContainerMapping
+					return nil, ErrInvalidContainerMapping
 				}
 
 				input.Container = null[array[string]]{
@@ -640,39 +640,39 @@ func (p *Processor) decodeTermObj(dec *jsontext.Decoder) (term, error) {
 			}
 
 			if err := json.UnmarshalDecode(dec, &input.Container); err != nil {
-				return input, ErrInvalidContainerMapping
+				return nil, ErrInvalidContainerMapping
 			}
 		case KeywordIndex:
 			if err := json.UnmarshalDecode(dec, &input.Index); err != nil {
-				return input, ErrInvalidTermDefinition
+				return nil, ErrInvalidTermDefinition
 			}
 		case KeywordContext:
 			if err := json.UnmarshalDecode(dec, &input.Context); err != nil {
-				return input, ErrInvalidScopedContext
+				return nil, ErrInvalidScopedContext
 			}
 		case KeywordLanguage:
 			if err := json.UnmarshalDecode(dec, &input.Language); err != nil {
-				return input, ErrInvalidLanguageMapping
+				return nil, ErrInvalidLanguageMapping
 			}
 		case KeywordDirection:
 			if err := json.UnmarshalDecode(dec, &input.Direction); err != nil {
-				return input, ErrInvalidBaseDirection
+				return nil, ErrInvalidBaseDirection
 			}
 		case KeywordNest:
 			if err := json.UnmarshalDecode(dec, &input.Nest); err != nil {
-				return input, ErrInvalidNestValue
+				return nil, ErrInvalidNestValue
 			}
 		case KeywordPrefix:
 			if err := json.UnmarshalDecode(dec, &input.Prefix); err != nil {
-				return input, ErrInvalidPrefixValue
+				return nil, ErrInvalidPrefixValue
 			}
 		case KeywordProtected:
 			if err := json.UnmarshalDecode(dec, &input.Protected); err != nil {
-				return input, ErrInvalidProtectedValue
+				return nil, ErrInvalidProtectedValue
 			}
 		default:
 			if err := dec.SkipValue(); err != nil {
-				return input, err
+				return nil, err
 			}
 			input.HasUnknownKeys = true
 		}
@@ -680,14 +680,14 @@ func (p *Processor) decodeTermObj(dec *jsontext.Decoder) (term, error) {
 
 	tok, err := dec.ReadToken()
 	if err != nil {
-		return input, err
+		return nil, err
 	}
 
 	if tok.Kind() != jsontext.KindEndObject {
-		return input, ErrInvalidTermDefinition
+		return nil, ErrInvalidTermDefinition
 	}
 
-	return input, nil
+	return &input, nil
 }
 
 func (p *Processor) handlePropagate(prop null[bool]) error {
@@ -776,8 +776,8 @@ func (p *Processor) handleImport(
 	ctx context.Context,
 	baseURL string,
 	uri string,
-	terms map[string]term,
-) (map[string]term, error) {
+	terms map[string]*term,
+) (map[string]*term, error) {
 	// 5.6.1)
 	if p.modeLD10 {
 		return nil, ErrInvalidContextEntry
@@ -808,7 +808,7 @@ func (p *Processor) handleImport(
 		return nil, ErrInvalidRemoteContext
 	}
 
-	importedTerms := make(map[string]term)
+	importedTerms := make(map[string]*term)
 
 	for dec.PeekKind() != jsontext.KindEndObject {
 		tok, err := dec.ReadToken()

@@ -14,7 +14,7 @@ func (p *Processor) expandIRI(
 	value string,
 	relative bool,
 	vocab bool,
-	localCtx map[string]term,
+	localCtx map[string]*term,
 	defined map[string]termState,
 ) (string, error) {
 	// 1)

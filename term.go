@@ -139,7 +139,7 @@ type term struct {
 func (p *Processor) createTerm(
 	ctx context.Context,
 	activeCtx *Context,
-	localCtx map[string]term,
+	localCtx map[string]*term,
 	term string,
 	defined map[string]termState,
 	opts createTermOptions,
