@@ -5,13 +5,12 @@ import (
 	"cmp"
 	"context"
 	"encoding/json/jsontext"
-	"encoding/json/v2"
 	"log/slog"
 	"slices"
 	"strings"
 
 	"sourcery.dny.nu/longdistance/internal/iri"
-	"sourcery.dny.nu/longdistance/internal/jsonutil"
+	"sourcery.dny.nu/longdistance/internal/twiddle"
 )
 
 // termState tracks the definition state of a term during context processing.
@@ -21,6 +20,27 @@ const (
 	termUndefined termState = iota // Term not yet processed
 	termDefining                   // Term is being defined (for cycle detection)
 	termDefined                    // Term definition is complete
+)
+
+// termFlag records which entries a term definition carried.
+type termFlag uint16
+
+const (
+	flagSimple      termFlag = 1 << iota // Definition was a plain string
+	flagNull                             // Definition was explicitly null
+	flagUnknownKeys                      // Definition carried unknown entries
+
+	flagID
+	flagNullID // @id was explicitly null
+	flagContainer
+	flagNullContainer // @container was explicitly null
+	flagLanguage
+	flagNullLanguage // @language was explicitly null
+	flagDirection
+	flagNullDirection // @direction was explicitly null
+
+	flagPrefix    // @prefix set, read term.Prefix for the value
+	flagProtected // @protected set, read term.Protected for the value
 )
 
 // Term represents a term definition in a JSON-LD context.
@@ -97,44 +117,20 @@ func newCreateTermOptions() createTermOptions {
 	}
 }
 
-type array[T any] []T
-
-func (a *array[T]) UnmarshalJSON(data []byte) error {
-	if jsonutil.IsNull(data) {
-		return nil
-	}
-
-	if jsonutil.IsEmptyArray(data) {
-		return nil
-	}
-
-	data = jsonutil.MakeArray(data)
-
-	var zero []T
-	if err := json.Unmarshal(data, &zero); err != nil {
-		return err
-	}
-
-	*a = zero
-	return nil
-}
-
 type term struct {
-	Null           bool
-	Simple         bool
-	ID             null[string]
-	Type           string
-	Reverse        string
-	Container      null[array[string]]
-	Index          string
-	Context        jsontext.Value
-	Language       null[string]
-	Direction      null[string]
-	Nest           string
-	Prefix         null[bool]
-	Protected      null[bool]
-	HasUnknownKeys bool
+	ID        string
+	Type      string
+	Reverse   string
+	Container []string
+	Index     string
+	Context   jsontext.Value
+	Language  string
+	Direction string
+	Nest      string
+	Prefix    bool
+	Protected bool
 
+	flags twiddle.Field[termFlag]
 	state termState
 }
 
@@ -181,22 +177,24 @@ func (p *Processor) createTerm(
 		}
 
 		// For @type, only @container and @protected are allowed
-		if input.ID.Set || input.Type != "" || input.Reverse != "" ||
-			input.Index != "" || input.Context != nil || input.Language.Set ||
-			input.Direction.Set || input.Nest != "" || (input.Prefix.Set && input.Prefix.Valid) ||
-			input.HasUnknownKeys {
+		if input.flags.Any(flagID, flagNullID) || input.Type != "" || input.Reverse != "" ||
+			input.Index != "" || input.Context != nil ||
+			input.flags.Any(flagLanguage, flagNullLanguage) ||
+			input.flags.Any(flagDirection, flagNullDirection) ||
+			input.Nest != "" || input.flags.Any(flagPrefix) ||
+			input.flags.Any(flagUnknownKeys) {
 			return ErrKeywordRedefinition
 		}
 
 		// @container must be @set if provided, and is required for non-simple definitions
-		if input.Container.Set && input.Container.Valid {
-			if len(input.Container.Value) != 1 {
+		if input.flags.Any(flagContainer) {
+			if len(input.Container) != 1 {
 				return ErrKeywordRedefinition
 			}
-			if input.Container.Value[0] != KeywordSet {
+			if input.Container[0] != KeywordSet {
 				return ErrKeywordRedefinition
 			}
-		} else if !input.Simple && !input.Null {
+		} else if input.flags.None(flagSimple, flagNull) {
 			return ErrKeywordRedefinition
 		}
 	} else {
@@ -221,11 +219,11 @@ func (p *Processor) createTerm(
 	}
 
 	// 11)
-	if input.Protected.Set && input.Protected.Valid {
+	if input.flags.Any(flagProtected) {
 		if p.modeLD10 {
 			return ErrInvalidTermDefinition
 		}
-		termDef.Protected = input.Protected.Value
+		termDef.Protected = input.Protected
 	}
 
 	// at this point protected is finalised, so add the
@@ -265,7 +263,7 @@ func (p *Processor) createTerm(
 	// 13)
 	if input.Reverse != "" {
 		// 13.1)
-		if input.ID.Set || input.Nest != "" {
+		if input.flags.Any(flagID, flagNullID) || input.Nest != "" {
 			return ErrInvalidReverseProperty
 		}
 
@@ -289,13 +287,13 @@ func (p *Processor) createTerm(
 		termDef.IRI = u
 
 		// 13.5)
-		if input.Container.Set {
-			if input.Container.Valid {
-				if input.Container.Value[0] != KeywordSet &&
-					input.Container.Value[0] != KeywordIndex {
+		if input.flags.Any(flagContainer, flagNullContainer) {
+			if input.flags.Any(flagContainer) {
+				if input.Container[0] != KeywordSet &&
+					input.Container[0] != KeywordIndex {
 					return ErrInvalidReverseProperty
 				}
-				termDef.Container = input.Container.Value
+				termDef.Container = input.Container
 			} else {
 				termDef.Container = nil
 			}
@@ -317,17 +315,17 @@ func (p *Processor) createTerm(
 		}
 		input.state = termDefined
 		return nil
-	} else if input.ID.Set && input.ID.Valid && term != input.ID.Value {
+	} else if input.flags.Any(flagID) && term != input.ID {
 		// 14.2)
-		if !isKeyword(input.ID.Value) && looksLikeKeyword(input.ID.Value) {
+		if !isKeyword(input.ID) && looksLikeKeyword(input.ID) {
 			// 14.2.2)
 			p.logger.Warn("keyword lookalike value encountered",
-				slog.String("value", input.ID.Value))
+				slog.String("value", input.ID))
 			return nil
 		}
 
 		// 14.2.3)
-		u, err := p.expandIRI(ctx, activeCtx, input.ID.Value, false, true, localCtx)
+		u, err := p.expandIRI(ctx, activeCtx, input.ID, false, true, localCtx)
 		if err != nil {
 			return err
 		}
@@ -358,14 +356,14 @@ func (p *Processor) createTerm(
 			}
 		} else {
 			// 14.2.5)
-			if input.Simple && iri.EndsInGenDelim(u) || u == BlankNode {
+			if input.flags.Any(flagSimple) && iri.EndsInGenDelim(u) || u == BlankNode {
 				if v, ok := p.remapPrefixIRIs[u]; ok {
 					termDef.IRI = v
 				}
 				termDef.Prefix = true
 			}
 		}
-	} else if input.ID.Set && !input.ID.Valid {
+	} else if input.flags.Any(flagNullID) {
 		// 14.1) @id was explicitly null
 	} else if strings.Contains(term[1:], ":") {
 		// 15)
@@ -409,13 +407,13 @@ func (p *Processor) createTerm(
 	}
 
 	// 19)
-	if input.Container.Set {
-		if !input.Container.Valid {
+	if input.flags.Any(flagContainer, flagNullContainer) {
+		if input.flags.Any(flagNullContainer) {
 			return ErrInvalidContainerMapping
 		}
 
 		// 19.1)
-		values := input.Container.Value
+		values := input.Container
 		for _, vl := range values {
 			switch vl {
 			case KeywordGraph, KeywordID, KeywordIndex,
@@ -531,25 +529,25 @@ func (p *Processor) createTerm(
 	}
 
 	// 22)
-	if input.Language.Set && input.Type == "" {
-		if !input.Language.Valid {
+	if input.flags.Any(flagLanguage, flagNullLanguage) && input.Type == "" {
+		if input.flags.Any(flagNullLanguage) {
 			termDef.Language = KeywordNull
 		} else {
-			termDef.Language = strings.ToLower(input.Language.Value)
+			termDef.Language = strings.ToLower(input.Language)
 		}
 	}
 
 	// 23)
-	if input.Direction.Set && input.Type == "" {
-		if !input.Direction.Valid {
+	if input.flags.Any(flagDirection, flagNullDirection) && input.Type == "" {
+		if input.flags.Any(flagNullDirection) {
 			termDef.Direction = KeywordNull
 		} else {
-			switch input.Direction.Value {
+			switch input.Direction {
 			case DirectionLTR, DirectionRTL:
 			default:
 				return ErrInvalidBaseDirection
 			}
-			termDef.Direction = input.Direction.Value
+			termDef.Direction = input.Direction
 		}
 	}
 
@@ -567,7 +565,7 @@ func (p *Processor) createTerm(
 	}
 
 	// 25)
-	if input.Prefix.Set && input.Prefix.Valid {
+	if input.flags.Any(flagPrefix) {
 		// 25.1)
 		if p.modeLD10 {
 			return ErrInvalidTermDefinition
@@ -578,15 +576,15 @@ func (p *Processor) createTerm(
 		}
 
 		// 25.3)
-		if input.Prefix.Value && isKeyword(termDef.IRI) {
+		if input.Prefix && isKeyword(termDef.IRI) {
 			return ErrInvalidTermDefinition
 		}
 
-		termDef.Prefix = input.Prefix.Value
+		termDef.Prefix = input.Prefix
 	}
 
 	// 26)
-	if input.HasUnknownKeys {
+	if input.flags.Any(flagUnknownKeys) {
 		return ErrInvalidTermDefinition
 	}
 
@@ -658,4 +656,11 @@ func selectTerm(
 
 	// 5)
 	return ""
+}
+
+func flags(isNil bool, set, null termFlag) termFlag {
+	if isNil {
+		return null
+	}
+	return set
 }

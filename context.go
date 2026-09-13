@@ -595,14 +595,18 @@ func (p *Processor) decodeTerm(dec *jsontext.Decoder) (*term, error) {
 			return nil, err
 		}
 
-		return &term{Null: true, ID: null[string]{Set: true}}, nil
+		t := &term{}
+		t.flags.Set(flagNull, flagNullID)
+		return t, nil
 	case jsontext.KindString:
 		tok, err := dec.ReadToken()
 		if err != nil {
 			return nil, err
 		}
 
-		return &term{Simple: true, ID: null[string]{Set: true, Valid: true, Value: tok.String()}}, nil
+		t := &term{ID: tok.String()}
+		t.flags.Set(flagSimple, flagID)
+		return t, nil
 	case jsontext.KindBeginObject:
 		if _, err := dec.ReadToken(); err != nil {
 			return nil, err
@@ -637,9 +641,8 @@ func (p *Processor) decodeTermObj(dec *jsontext.Decoder) (*term, error) {
 				return nil, errors.Join(err, ErrInvalidIRIMapping)
 			}
 
-			input.ID.Set = true
-			input.ID.Valid = !isNil
-			input.ID.Value = val
+			input.ID = val
+			input.flags.Set(flags(isNil, flagID, flagNullID))
 		case KeywordType:
 			val, _, err := jsonutil.DecodeString(dec)
 			if err != nil {
@@ -662,11 +665,8 @@ func (p *Processor) decodeTermObj(dec *jsontext.Decoder) (*term, error) {
 					return nil, errors.Join(err, ErrInvalidContainerMapping)
 				}
 
-				input.Container = null[array[string]]{
-					Set:   true,
-					Valid: true,
-					Value: []string{val},
-				}
+				input.Container = []string{val}
+				input.flags.Set(flagContainer)
 
 				continue
 			}
@@ -676,9 +676,8 @@ func (p *Processor) decodeTermObj(dec *jsontext.Decoder) (*term, error) {
 				return nil, errors.Join(err, ErrInvalidContainerMapping)
 			}
 
-			input.Container.Set = true
-			input.Container.Valid = !isNil
-			input.Container.Value = res
+			input.Container = res
+			input.flags.Set(flags(isNil, flagContainer, flagNullContainer))
 		case KeywordIndex:
 			val, _, err := jsonutil.DecodeString(dec)
 			if err != nil {
@@ -699,18 +698,16 @@ func (p *Processor) decodeTermObj(dec *jsontext.Decoder) (*term, error) {
 				return nil, errors.Join(err, ErrInvalidLanguageMapping)
 			}
 
-			input.Language.Set = true
-			input.Language.Valid = !isNil
-			input.Language.Value = val
+			input.Language = val
+			input.flags.Set(flags(isNil, flagLanguage, flagNullLanguage))
 		case KeywordDirection:
 			val, isNil, err := jsonutil.DecodeString(dec)
 			if err != nil {
 				return nil, errors.Join(err, ErrInvalidBaseDirection)
 			}
 
-			input.Direction.Set = true
-			input.Direction.Valid = !isNil
-			input.Direction.Value = val
+			input.Direction = val
+			input.flags.Set(flags(isNil, flagDirection, flagNullDirection))
 		case KeywordNest:
 			val, _, err := jsonutil.DecodeString(dec)
 			if err != nil {
@@ -724,23 +721,25 @@ func (p *Processor) decodeTermObj(dec *jsontext.Decoder) (*term, error) {
 				return nil, errors.Join(err, ErrInvalidPrefixValue)
 			}
 
-			input.Prefix.Set = true
-			input.Prefix.Valid = !isNil
-			input.Prefix.Value = val
+			if !isNil {
+				input.Prefix = val
+				input.flags.Set(flagPrefix)
+			}
 		case KeywordProtected:
 			val, isNil, err := jsonutil.DecodeBool(dec)
 			if err != nil {
 				return nil, errors.Join(err, ErrInvalidProtectedValue)
 			}
 
-			input.Protected.Set = true
-			input.Protected.Valid = !isNil
-			input.Protected.Value = val
+			if !isNil {
+				input.Protected = val
+				input.flags.Set(flagProtected)
+			}
 		default:
 			if err := dec.SkipValue(); err != nil {
 				return nil, err
 			}
-			input.HasUnknownKeys = true
+			input.flags.Set(flagUnknownKeys)
 		}
 	}
 
