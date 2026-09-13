@@ -303,17 +303,20 @@ func (p *Processor) context(
 			}
 
 			// 5.13)
-			for k := range ctxObj.Terms {
-				newOpts := newCreateTermOptions()
-				newOpts.baseURL = baseURL
-				newOpts.protected = protected
-				newOpts.override = opts.override
-				newOpts.remotes = opts.remotes
+			newOpts := createTermOptions{
+				baseURL:   baseURL,
+				remotes:   opts.remotes,
+				protected: protected,
+				override:  opts.override,
+			}
+
+			for k, v := range ctxObj.Terms {
 				if err := p.createTerm(
 					ctx,
 					result,
 					ctxObj.Terms,
 					k,
+					v,
 					newOpts,
 				); err != nil {
 					return nil, err

@@ -40,7 +40,8 @@ func (p *Processor) expandIRI(
 				activeCtx,
 				localCtx,
 				value,
-				newCreateTermOptions(),
+				t,
+				createTermOptions{},
 			); err != nil {
 				return "", err
 			}
@@ -74,7 +75,8 @@ func (p *Processor) expandIRI(
 						activeCtx,
 						localCtx,
 						prefix,
-						newCreateTermOptions(),
+						t,
+						createTermOptions{},
 					); err != nil {
 						return "", err
 					}

@@ -105,16 +105,9 @@ func (t *Term) equalWithoutProtected(ot *Term) bool {
 
 type createTermOptions struct {
 	baseURL   string
+	remotes   []string
 	protected bool
 	override  bool
-	remotes   []string
-	validate  bool
-}
-
-func newCreateTermOptions() createTermOptions {
-	return createTermOptions{
-		validate: true,
-	}
 }
 
 type term struct {
@@ -139,15 +132,14 @@ func (p *Processor) createTerm(
 	activeCtx *Context,
 	localCtx map[string]*term,
 	term string,
+	input *term,
 	opts createTermOptions,
 ) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	// 3) grab input directly, since it is tracking term definition
-	// state, not the separated defined map from the spec
-	input := localCtx[term]
+	// 3) its the already passed in term
 
 	// 1)
 	if input.state != termUndefined {
@@ -164,6 +156,9 @@ func (p *Processor) createTerm(
 		input.state = termDefining
 	}
 
+	// 6) do this here because 4) also uses this lookup
+	oldDef, oldDefOK := activeCtx.defs[term]
+
 	// 4)
 	if term == KeywordType {
 		if p.modeLD10 {
@@ -172,7 +167,7 @@ func (p *Processor) createTerm(
 
 		// Check if @type is protected before validating the new definition
 		// If protected and not overriding, return protected term redefinition first
-		if oldDef, oldOK := activeCtx.defs[term]; oldOK && oldDef.Protected && !opts.override {
+		if oldDefOK && oldDef.Protected && !opts.override {
 			return ErrProtectedTermRedefinition
 		}
 
@@ -210,8 +205,9 @@ func (p *Processor) createTerm(
 	}
 
 	// 6)
-	oldDef, oldDefOK := activeCtx.defs[term]
-	delete(activeCtx.defs, term)
+	if oldDefOK {
+		delete(activeCtx.defs, term)
+	}
 
 	// 10)
 	termDef := Term{
@@ -371,8 +367,8 @@ func (p *Processor) createTerm(
 
 		// 15.1)
 		if !strings.HasPrefix(suffix, "//") {
-			if _, ok := localCtx[prefix]; ok {
-				if err := p.createTerm(ctx, activeCtx, localCtx, prefix, newCreateTermOptions()); err != nil {
+			if t, ok := localCtx[prefix]; ok {
+				if err := p.createTerm(ctx, activeCtx, localCtx, prefix, t, createTermOptions{}); err != nil {
 					return err
 				}
 			}
