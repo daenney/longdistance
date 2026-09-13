@@ -5,7 +5,6 @@ import (
 	"cmp"
 	"context"
 	"encoding/json/jsontext"
-	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -449,22 +448,6 @@ type null[T any] struct {
 	Value T
 }
 
-func (n *null[T]) UnmarshalJSON(data []byte) error {
-	n.Set = true
-	if jsonutil.IsNull(data) {
-		return nil
-	}
-
-	var zero T
-	if err := json.Unmarshal(data, &zero); err != nil {
-		return err
-	}
-
-	n.Valid = true
-	n.Value = zero
-	return nil
-}
-
 // contextObj is a decoded context, before term processing takes place. This
 // lets us process the context once, avoiding lookups into the JSON during term
 // creation because we need to support forward resolution of terms.
@@ -507,45 +490,85 @@ func (p *Processor) decodeCtxObj(ctx context.Context, dec *jsontext.Decoder) (*c
 				return nil, ErrProcessingMode
 			}
 
-			if err := json.UnmarshalDecode(dec, &obj.Version); err != nil {
+			val, isNil, err := jsonutil.DecodeFloat64(dec)
+			if err != nil {
 				return nil, errors.Join(err, ErrInvalidVersionValue)
 			}
+
+			obj.Version.Set = true
+			obj.Version.Valid = !isNil
+			obj.Version.Value = val
 		case KeywordImport:
-			if err := json.UnmarshalDecode(dec, &obj.Import); err != nil {
+			val, isNil, err := jsonutil.DecodeString(dec)
+			if err != nil {
 				return nil, errors.Join(err, ErrInvalidImportValue)
 			}
+
+			obj.Import.Set = true
+			obj.Import.Valid = !isNil
+			obj.Import.Value = val
 		case KeywordBase:
-			if err := json.UnmarshalDecode(dec, &obj.Base); err != nil {
+			val, isNil, err := jsonutil.DecodeString(dec)
+			if err != nil {
 				return nil, errors.Join(err, ErrInvalidBaseIRI)
 			}
+
+			obj.Base.Set = true
+			obj.Base.Valid = !isNil
+			obj.Base.Value = val
 		case KeywordVocab:
-			if err := json.UnmarshalDecode(dec, &obj.Vocab); err != nil {
+			val, isNil, err := jsonutil.DecodeString(dec)
+			if err != nil {
 				return nil, errors.Join(err, ErrInvalidVocabMapping)
 			}
+
+			obj.Vocab.Set = true
+			obj.Vocab.Valid = !isNil
+			obj.Vocab.Value = val
 		case KeywordLanguage:
-			if err := json.UnmarshalDecode(dec, &obj.Lang); err != nil {
+			val, isNil, err := jsonutil.DecodeString(dec)
+			if err != nil {
 				return nil, errors.Join(err, ErrInvalidDefaultLanguage)
 			}
+
+			obj.Lang.Set = true
+			obj.Lang.Valid = !isNil
+			obj.Lang.Value = val
 		case KeywordDirection:
 			if p.modeLD10 {
 				return nil, ErrInvalidContextEntry
 			}
 
-			if err := json.UnmarshalDecode(dec, &obj.Dir); err != nil {
+			val, isNil, err := jsonutil.DecodeString(dec)
+			if err != nil {
 				return nil, errors.Join(err, ErrInvalidBaseDirection)
 			}
+
+			obj.Dir.Set = true
+			obj.Dir.Valid = !isNil
+			obj.Dir.Value = val
 		case KeywordPropagate:
 			if p.modeLD10 {
 				return nil, ErrInvalidContextEntry
 			}
 
-			if err := json.UnmarshalDecode(dec, &obj.Propagate); err != nil {
+			val, isNil, err := jsonutil.DecodeBool(dec)
+			if err != nil {
 				return nil, errors.Join(err, ErrInvalidPropagateValue)
 			}
+
+			obj.Propagate.Set = true
+			obj.Propagate.Valid = !isNil
+			obj.Propagate.Value = val
 		case KeywordProtected:
-			if err := json.UnmarshalDecode(dec, &obj.Protected); err != nil {
+			val, isNil, err := jsonutil.DecodeBool(dec)
+			if err != nil {
 				return nil, errors.Join(err, ErrInvalidProtectedValue)
 			}
+
+			obj.Protected.Set = true
+			obj.Protected.Valid = !isNil
+			obj.Protected.Value = val
 		default:
 			input, err := p.decodeTerm(dec)
 			if err != nil {
@@ -611,65 +634,110 @@ func (p *Processor) decodeTermObj(dec *jsontext.Decoder) (*term, error) {
 
 		switch key {
 		case KeywordID:
-			if err := json.UnmarshalDecode(dec, &input.ID); err != nil {
-				return nil, ErrInvalidIRIMapping
+			val, isNil, err := jsonutil.DecodeString(dec)
+			if err != nil {
+				return nil, errors.Join(err, ErrInvalidIRIMapping)
 			}
+
+			input.ID.Set = true
+			input.ID.Valid = !isNil
+			input.ID.Value = val
 		case KeywordType:
-			if err := json.UnmarshalDecode(dec, &input.Type); err != nil {
-				return nil, ErrInvalidTypeMapping
+			val, _, err := jsonutil.DecodeString(dec)
+			if err != nil {
+				return nil, errors.Join(err, ErrInvalidTypeMapping)
 			}
+
+			input.Type = val
 		case KeywordReverse:
-			if err := json.UnmarshalDecode(dec, &input.Reverse); err != nil {
-				return nil, ErrInvalidIRIMapping
+			val, _, err := jsonutil.DecodeString(dec)
+			if err != nil {
+				return nil, errors.Join(err, ErrInvalidIRIMapping)
 			}
+
+			input.Reverse = val
 		case KeywordContainer:
 			if p.modeLD10 {
 				// In LD 1.0 it must be a string and only a string
-				var s string
-				if err := json.UnmarshalDecode(dec, &s); err != nil {
-					return nil, ErrInvalidContainerMapping
+				val, _, err := jsonutil.DecodeString(dec)
+				if err != nil {
+					return nil, errors.Join(err, ErrInvalidContainerMapping)
 				}
 
 				input.Container = null[array[string]]{
 					Set:   true,
 					Valid: true,
-					Value: []string{s},
+					Value: []string{val},
 				}
 
 				continue
 			}
 
-			if err := json.UnmarshalDecode(dec, &input.Container); err != nil {
-				return nil, ErrInvalidContainerMapping
+			res, isNil, err := jsonutil.DecodeStringSlice(dec)
+			if err != nil {
+				return nil, errors.Join(err, ErrInvalidContainerMapping)
 			}
+
+			input.Container.Set = true
+			input.Container.Valid = !isNil
+			input.Container.Value = res
 		case KeywordIndex:
-			if err := json.UnmarshalDecode(dec, &input.Index); err != nil {
-				return nil, ErrInvalidTermDefinition
+			val, _, err := jsonutil.DecodeString(dec)
+			if err != nil {
+				return nil, errors.Join(err, ErrInvalidTermDefinition)
 			}
+
+			input.Index = val
 		case KeywordContext:
-			if err := json.UnmarshalDecode(dec, &input.Context); err != nil {
-				return nil, ErrInvalidScopedContext
+			val, err := dec.ReadValue()
+			if err != nil {
+				return nil, errors.Join(err, ErrInvalidScopedContext)
 			}
+
+			input.Context = val.Clone()
 		case KeywordLanguage:
-			if err := json.UnmarshalDecode(dec, &input.Language); err != nil {
-				return nil, ErrInvalidLanguageMapping
+			val, isNil, err := jsonutil.DecodeString(dec)
+			if err != nil {
+				return nil, errors.Join(err, ErrInvalidLanguageMapping)
 			}
+
+			input.Language.Set = true
+			input.Language.Valid = !isNil
+			input.Language.Value = val
 		case KeywordDirection:
-			if err := json.UnmarshalDecode(dec, &input.Direction); err != nil {
-				return nil, ErrInvalidBaseDirection
+			val, isNil, err := jsonutil.DecodeString(dec)
+			if err != nil {
+				return nil, errors.Join(err, ErrInvalidBaseDirection)
 			}
+
+			input.Direction.Set = true
+			input.Direction.Valid = !isNil
+			input.Direction.Value = val
 		case KeywordNest:
-			if err := json.UnmarshalDecode(dec, &input.Nest); err != nil {
-				return nil, ErrInvalidNestValue
+			val, _, err := jsonutil.DecodeString(dec)
+			if err != nil {
+				return nil, errors.Join(err, ErrInvalidNestValue)
 			}
+
+			input.Nest = val
 		case KeywordPrefix:
-			if err := json.UnmarshalDecode(dec, &input.Prefix); err != nil {
-				return nil, ErrInvalidPrefixValue
+			val, isNil, err := jsonutil.DecodeBool(dec)
+			if err != nil {
+				return nil, errors.Join(err, ErrInvalidPrefixValue)
 			}
+
+			input.Prefix.Set = true
+			input.Prefix.Valid = !isNil
+			input.Prefix.Value = val
 		case KeywordProtected:
-			if err := json.UnmarshalDecode(dec, &input.Protected); err != nil {
-				return nil, ErrInvalidProtectedValue
+			val, isNil, err := jsonutil.DecodeBool(dec)
+			if err != nil {
+				return nil, errors.Join(err, ErrInvalidProtectedValue)
 			}
+
+			input.Protected.Set = true
+			input.Protected.Valid = !isNil
+			input.Protected.Value = val
 		default:
 			if err := dec.SkipValue(); err != nil {
 				return nil, err

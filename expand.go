@@ -45,10 +45,11 @@ func (p *Processor) Expand(
 	if p.expandContext == nil {
 		ldCtx = newContext(baseIRI)
 	} else {
-		var obj jsonutil.Object
-		if err := json.Unmarshal(p.expandContext, &obj); err != nil {
+		obj, err := jsonutil.ReadObject(p.expandContext)
+		if err != nil {
 			return nil, ErrInvalidLocalContext
 		}
+
 		var rawctx jsontext.Value
 		if v, ok := obj[KeywordContext]; ok {
 			rawctx = v
@@ -56,7 +57,6 @@ func (p *Processor) Expand(
 			rawctx = p.expandContext
 		}
 
-		var err error
 		dec := jsontext.NewDecoder(bytes.NewBuffer(rawctx))
 		ldCtx, err = p.context(ctx, nil, dec, "", newCtxProcessingOpts())
 		if err != nil {
@@ -402,27 +402,25 @@ func (p *Processor) expandObject(
 		}
 	}
 
-	var stringTerms []string
-	if len(typeVal) > 0 {
-		if err := json.Unmarshal(jsonutil.MakeArray(typeVal), &stringTerms); err != nil {
-			return nil, ErrInvalidTypeValue
-		}
+	stringTerms, err := jsonutil.ReadStringSlice(typeVal)
+	if err != nil {
+		return nil, errors.Join(err, ErrInvalidTypeValue)
+	}
 
-		slices.Sort(stringTerms)
+	slices.Sort(stringTerms)
 
-		for _, term := range stringTerms {
-			if tscopeDef, ok := typContext.defs[term]; ok && tscopeDef.Context != nil {
-				adef, _ := activeCtx.lookup(term)
-				ropts := newCtxProcessingOpts()
-				ropts.propagate = false
+	for _, term := range stringTerms {
+		if tscopeDef, ok := typContext.defs[term]; ok && tscopeDef.Context != nil {
+			adef, _ := activeCtx.lookup(term)
+			ropts := newCtxProcessingOpts()
+			ropts.propagate = false
 
-				nctx, err := p.context(ctx, activeCtx, jsontext.NewDecoder(bytes.NewBuffer(tscopeDef.Context)), adef.BaseIRI, ropts)
-				if err != nil {
-					return nil, err
-				}
-
-				activeCtx = nctx
+			nctx, err := p.context(ctx, activeCtx, jsontext.NewDecoder(bytes.NewBuffer(tscopeDef.Context)), adef.BaseIRI, ropts)
+			if err != nil {
+				return nil, err
 			}
+
+			activeCtx = nctx
 		}
 	}
 
@@ -575,10 +573,10 @@ mainLoop:
 					return ErrInvalidIDValue
 				}
 
-				var s string
-				if err := json.Unmarshal(value, &s); err != nil {
+				s, err := jsonutil.ReadString(value)
+				if err != nil {
 					// 13.4.3.1)
-					return ErrInvalidIDValue
+					return errors.Join(err, ErrInvalidIDValue)
 				}
 
 				if s == "" {
@@ -611,10 +609,8 @@ mainLoop:
 				// 13.4.4.2) 13.4.4.3) skipped because frame expansion
 
 				// 13.4.4.4)
-				value = jsonutil.MakeArray(value)
-
-				var vals []string
-				if err := json.Unmarshal(value, &vals); err != nil {
+				vals, err := jsonutil.ReadStringSlice(value)
+				if err != nil {
 					return err
 				}
 
@@ -692,10 +688,10 @@ mainLoop:
 				result.Value = value
 			case KeywordLanguage:
 				// 13.4.8)
-				var l string
-				if err := json.Unmarshal(value, &l); err != nil {
+				l, err := jsonutil.ReadString(value)
+				if err != nil {
 					// 13.4.8.1)
-					return ErrInvalidLanguageTaggedString
+					return errors.Join(err, ErrInvalidLanguageTaggedString)
 				}
 
 				// 13.4.8.2)
@@ -707,9 +703,9 @@ mainLoop:
 					continue mainLoop
 				}
 
-				var d string
-				if err := json.Unmarshal(value, &d); err != nil {
-					return ErrInvalidBaseDirection
+				d, err := jsonutil.ReadString(value)
+				if err != nil {
+					return errors.Join(err, ErrInvalidBaseDirection)
 				}
 
 				// 13.4.9.2)
@@ -723,10 +719,10 @@ mainLoop:
 				result.Direction = d
 			case KeywordIndex:
 				// 13.4.10)
-				var i string
-				if err := json.Unmarshal(value, &i); err != nil {
+				i, err := jsonutil.ReadString(value)
+				if err != nil {
 					// 13.4.10.1)
-					return ErrInvalidIndexValue
+					return errors.Join(err, ErrInvalidIndexValue)
 				}
 
 				// 13.4.10.2)
@@ -843,7 +839,8 @@ mainLoop:
 		} else if slices.Contains(cnt, KeywordLanguage) && jsonutil.IsMap(value) {
 			// 13.7)
 			var langMap jsonutil.Object
-			if err := json.Unmarshal(value, &langMap); err != nil {
+			langMap, err := jsonutil.ReadObject(value)
+			if err != nil {
 				return err
 			}
 
@@ -856,10 +853,8 @@ mainLoop:
 			// 13.7.4)
 			for langKey, langValue := range langMap {
 				// 13.7.4.1)
-				langValue = jsonutil.MakeArray(langValue)
-
-				var langValues jsonutil.Array
-				if err := json.Unmarshal(langValue, &langValues); err != nil {
+				langValues, err := jsonutil.ReadValueSlice(langValue)
+				if err != nil {
 					return err
 				}
 
@@ -901,8 +896,8 @@ mainLoop:
 			jsonutil.IsMap(value) {
 			// 13.8)
 
-			var objVal jsonutil.Object
-			if err := json.Unmarshal(value, &objVal); err != nil {
+			objVal, err := jsonutil.ReadObject(value)
+			if err != nil {
 				return err
 			}
 
