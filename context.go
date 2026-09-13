@@ -39,17 +39,33 @@ type Context struct {
 type lazyInverse struct {
 	context *Context
 	defs    map[string]map[string]mapping
-	built   map[string]struct{}
+	index   map[string][]string
+}
+
+func (l *lazyInverse) buildIndex() {
+	// 3.1)
+	idx := make(map[string][]string, len(l.context.defs))
+	for term, def := range l.context.defs {
+		idx[def.IRI] = append(idx[def.IRI], term)
+	}
+
+	for _, terms := range idx {
+		slices.SortFunc(terms, sortedLeast)
+	}
+
+	l.index = idx
 }
 
 func (l *lazyInverse) get(iri string) (map[string]mapping, bool) {
-	if _, ok := l.built[iri]; ok {
-		return l.defs[iri], ok
+	if val, ok := l.defs[iri]; ok {
+		return val, ok
 	}
 
 	// we don't have a mapping yet, build it.
 	l.workIt(iri)
-	return l.defs[iri], true
+
+	val, ok := l.defs[iri]
+	return val, ok
 }
 
 // newContext initialises a new context with the specified documentURL set as
@@ -78,10 +94,11 @@ func (c *Context) Terms() iter.Seq2[string, *Term] {
 func (c *Context) initInverse() {
 	if c.inverse == nil {
 		c.inverse = &lazyInverse{
-			defs:    make(map[string]map[string]mapping, len(c.defs)/3),
-			built:   make(map[string]struct{}, len(c.defs)/3),
+			defs:    make(map[string]map[string]mapping, len(c.defs)),
 			context: c,
 		}
+
+		c.inverse.buildIndex()
 	}
 }
 
@@ -877,17 +894,7 @@ func (lctx *lazyInverse) workIt(iri string) {
 		KeywordNone,
 	)
 
-	terms := make([]string, 0, 4)
-	for key, def := range lctx.context.defs {
-		// 3.1)
-		if def.IRI == iri {
-			terms = append(terms, key)
-		}
-	}
-
-	slices.SortFunc(terms, sortedLeast)
-
-	for _, key := range terms {
+	for _, key := range lctx.index[iri] {
 		// 3)
 		def := lctx.context.defs[key]
 
@@ -1017,6 +1024,4 @@ func (lctx *lazyInverse) workIt(iri string) {
 			}
 		}
 	}
-
-	lctx.built[iri] = struct{}{}
 }
