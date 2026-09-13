@@ -15,6 +15,7 @@ import (
 
 	"sourcery.dny.nu/longdistance/internal/iri"
 	"sourcery.dny.nu/longdistance/internal/jsonutil"
+	"sourcery.dny.nu/longdistance/internal/twiddle"
 )
 
 // RemoteContextLimit is the recursion limit for resolving remote contexts.
@@ -228,8 +229,8 @@ func (p *Processor) context(
 			}
 
 			// 2) Check @propagate on first context
-			if first && ctxObj.Propagate.Set && ctxObj.Propagate.Valid {
-				opts.propagate = ctxObj.Propagate.Value
+			if first && ctxObj.flags.Any(ctxPropagate) {
+				opts.propagate = ctxObj.Propagate
 			}
 
 			// 3)
@@ -238,15 +239,15 @@ func (p *Processor) context(
 			}
 
 			// 5.5)
-			if ctxObj.Version.Set {
+			if ctxObj.flags.Any(ctxVersion) {
 				if err := p.handleVersion(ctxObj.Version); err != nil {
 					return nil, err
 				}
 			}
 
 			// 5.6)
-			if ctxObj.Import.Set && ctxObj.Import.Valid && ctxObj.Import.Value != "" {
-				imported, err := p.handleImport(ctx, baseURL, ctxObj.Import.Value, ctxObj.Terms)
+			if ctxObj.flags.Any(ctxImport) && ctxObj.Import != "" {
+				imported, err := p.handleImport(ctx, baseURL, ctxObj.Import, ctxObj.Terms)
 				if err != nil {
 					return nil, err
 				}
@@ -254,46 +255,46 @@ func (p *Processor) context(
 			}
 
 			// 5.7)
-			if ctxObj.Base.Set && len(opts.remotes) == 0 {
-				if err := p.handleBase(result, ctxObj.Base); err != nil {
+			if ctxObj.flags.Any(ctxBase, ctxNullBase) && len(opts.remotes) == 0 {
+				if err := p.handleBase(result, ctxObj.Base, ctxObj.flags.Any(ctxNullBase)); err != nil {
 					return nil, err
 				}
 			}
 
 			// 5.8)
-			if ctxObj.Vocab.Set {
-				if err := p.handleVocab(ctx, result, ctxObj.Vocab); err != nil {
+			if ctxObj.flags.Any(ctxVocab, ctxNullVocab) {
+				if err := p.handleVocab(ctx, result, ctxObj.Vocab, ctxObj.flags.Any(ctxNullVocab)); err != nil {
 					return nil, err
 				}
 			}
 
 			// 5.9)
-			if ctxObj.Lang.Set {
-				if err := p.handleLanguage(result, ctxObj.Lang); err != nil {
+			if ctxObj.flags.Any(ctxLang, ctxNullLang) {
+				if err := p.handleLanguage(result, ctxObj.Lang, ctxObj.flags.Any(ctxNullLang)); err != nil {
 					return nil, err
 				}
 			}
 
 			// 5.10)
-			if ctxObj.Dir.Set {
-				if err := p.handleDirection(result, ctxObj.Dir); err != nil {
+			if ctxObj.flags.Any(ctxDir, ctxNullDir) {
+				if err := p.handleDirection(result, ctxObj.Dir, ctxObj.flags.Any(ctxNullDir)); err != nil {
 					return nil, err
 				}
 			}
 
 			// 5.11)
-			if ctxObj.Propagate.Set {
-				if err := p.handlePropagate(ctxObj.Propagate); err != nil {
+			if ctxObj.flags.Any(ctxPropagate, ctxNullPropagate) {
+				if err := p.handlePropagate(ctxObj.flags.Any(ctxNullPropagate)); err != nil {
 					return nil, err
 				}
 			}
 
 			protected := false
-			if ctxObj.Protected.Set {
-				if !ctxObj.Protected.Valid {
+			if ctxObj.flags.Any(ctxProtected, ctxNullProtected) {
+				if ctxObj.flags.Any(ctxNullProtected) {
 					return nil, ErrInvalidProtectedValue
 				}
-				protected = ctxObj.Protected.Value
+				protected = ctxObj.Protected
 			}
 
 			// 5.12)
@@ -440,25 +441,43 @@ func (p *Processor) context(
 	return result, nil
 }
 
-type null[T any] struct {
-	Set   bool
-	Valid bool
-	Value T
-}
+// ctxFlag records which entries a context object carried
+type ctxFlag uint16
+
+const (
+	ctxVersion ctxFlag = 1 << iota
+	ctxImport
+
+	ctxBase
+	ctxNullBase // @base was explicitly null
+	ctxVocab
+	ctxNullVocab // @vocab was explicitly null
+	ctxLang
+	ctxNullLang // @language was explicitly null
+	ctxDir
+	ctxNullDir // @direction was explicitly null
+
+	ctxPropagate     // @propagate set, read contextObj.Propagate for the value
+	ctxNullPropagate // @propagate was explicitly null
+	ctxProtected     // @protected set, read contextObj.Protected for the value
+	ctxNullProtected // @protected was explicitly null
+)
 
 // contextObj is a decoded context, before term processing takes place. This
 // lets us process the context once, avoiding lookups into the JSON during term
 // creation because we need to support forward resolution of terms.
 type contextObj struct {
-	Version   null[float64]
-	Import    null[string]
-	Base      null[string]
-	Vocab     null[string]
-	Lang      null[string]
-	Dir       null[string]
-	Propagate null[bool]
-	Protected null[bool]
-	Terms     map[string]*term
+	Version   float64
+	Import    string
+	Base      string
+	Vocab     string
+	Lang      string
+	Dir       string
+	Propagate bool
+	Protected bool
+
+	flags twiddle.Field[ctxFlag]
+	Terms map[string]*term
 }
 
 func (p *Processor) decodeCtxObj(ctx context.Context, dec *jsontext.Decoder) (*contextObj, error) {
@@ -488,50 +507,47 @@ func (p *Processor) decodeCtxObj(ctx context.Context, dec *jsontext.Decoder) (*c
 				return nil, ErrProcessingMode
 			}
 
-			val, isNil, err := jsonutil.DecodeFloat64(dec)
+			val, _, err := jsonutil.DecodeFloat64(dec)
 			if err != nil {
 				return nil, errors.Join(err, ErrInvalidVersionValue)
 			}
 
-			obj.Version.Set = true
-			obj.Version.Valid = !isNil
-			obj.Version.Value = val
+			obj.Version = val
+			obj.flags.Set(ctxVersion)
 		case KeywordImport:
 			val, isNil, err := jsonutil.DecodeString(dec)
 			if err != nil {
 				return nil, errors.Join(err, ErrInvalidImportValue)
 			}
 
-			obj.Import.Set = true
-			obj.Import.Valid = !isNil
-			obj.Import.Value = val
+			obj.Import = val
+			if !isNil {
+				obj.flags.Set(ctxImport)
+			}
 		case KeywordBase:
 			val, isNil, err := jsonutil.DecodeString(dec)
 			if err != nil {
 				return nil, errors.Join(err, ErrInvalidBaseIRI)
 			}
 
-			obj.Base.Set = true
-			obj.Base.Valid = !isNil
-			obj.Base.Value = val
+			obj.Base = val
+			obj.flags.Set(flags(isNil, ctxBase, ctxNullBase))
 		case KeywordVocab:
 			val, isNil, err := jsonutil.DecodeString(dec)
 			if err != nil {
 				return nil, errors.Join(err, ErrInvalidVocabMapping)
 			}
 
-			obj.Vocab.Set = true
-			obj.Vocab.Valid = !isNil
-			obj.Vocab.Value = val
+			obj.Vocab = val
+			obj.flags.Set(flags(isNil, ctxVocab, ctxNullVocab))
 		case KeywordLanguage:
 			val, isNil, err := jsonutil.DecodeString(dec)
 			if err != nil {
 				return nil, errors.Join(err, ErrInvalidDefaultLanguage)
 			}
 
-			obj.Lang.Set = true
-			obj.Lang.Valid = !isNil
-			obj.Lang.Value = val
+			obj.Lang = val
+			obj.flags.Set(flags(isNil, ctxLang, ctxNullLang))
 		case KeywordDirection:
 			if p.modeLD10 {
 				return nil, ErrInvalidContextEntry
@@ -542,9 +558,8 @@ func (p *Processor) decodeCtxObj(ctx context.Context, dec *jsontext.Decoder) (*c
 				return nil, errors.Join(err, ErrInvalidBaseDirection)
 			}
 
-			obj.Dir.Set = true
-			obj.Dir.Valid = !isNil
-			obj.Dir.Value = val
+			obj.Dir = val
+			obj.flags.Set(flags(isNil, ctxDir, ctxNullDir))
 		case KeywordPropagate:
 			if p.modeLD10 {
 				return nil, ErrInvalidContextEntry
@@ -555,18 +570,16 @@ func (p *Processor) decodeCtxObj(ctx context.Context, dec *jsontext.Decoder) (*c
 				return nil, errors.Join(err, ErrInvalidPropagateValue)
 			}
 
-			obj.Propagate.Set = true
-			obj.Propagate.Valid = !isNil
-			obj.Propagate.Value = val
+			obj.Propagate = val
+			obj.flags.Set(flags(isNil, ctxPropagate, ctxNullPropagate))
 		case KeywordProtected:
 			val, isNil, err := jsonutil.DecodeBool(dec)
 			if err != nil {
 				return nil, errors.Join(err, ErrInvalidProtectedValue)
 			}
 
-			obj.Protected.Set = true
-			obj.Protected.Valid = !isNil
-			obj.Protected.Value = val
+			obj.Protected = val
+			obj.flags.Set(flags(isNil, ctxProtected, ctxNullProtected))
 		default:
 			input, err := p.decodeTerm(dec)
 			if err != nil {
@@ -755,53 +768,53 @@ func (p *Processor) decodeTermObj(dec *jsontext.Decoder) (*term, error) {
 	return &input, nil
 }
 
-func (p *Processor) handlePropagate(prop null[bool]) error {
-	if !prop.Valid {
+func (p *Processor) handlePropagate(isNull bool) error {
+	if isNull {
 		return ErrInvalidPropagateValue
 	}
 
 	return nil
 }
 
-func (p *Processor) handleDirection(result *Context, dir null[string]) error {
-	if !dir.Valid {
+func (p *Processor) handleDirection(result *Context, dir string, isNull bool) error {
+	if isNull {
 		result.defaultDirection = ""
 		return nil
 	}
 
-	switch dir.Value {
+	switch dir {
 	case DirectionLTR, DirectionRTL:
 	default:
 		return ErrInvalidBaseDirection
 	}
 
-	result.defaultDirection = dir.Value
+	result.defaultDirection = dir
 	return nil
 }
 
-func (p *Processor) handleLanguage(result *Context, lang null[string]) error {
-	if !lang.Valid {
+func (p *Processor) handleLanguage(result *Context, lang string, isNull bool) error {
+	if isNull {
 		result.defaultLang = ""
 		return nil
 	}
 
-	result.defaultLang = strings.ToLower(lang.Value)
+	result.defaultLang = strings.ToLower(lang)
 	return nil
 }
 
-func (p *Processor) handleVocab(ctx context.Context, result *Context, vocab null[string]) error {
+func (p *Processor) handleVocab(ctx context.Context, result *Context, vocab string, isNull bool) error {
 	// 5.8.2)
-	if !vocab.Valid {
+	if isNull {
 		result.vocabMapping = ""
 		return nil
 	}
 
 	// 5.8.3)
-	if !(iri.IsAbsolute(vocab.Value) || iri.IsRelative(vocab.Value) || vocab.Value == BlankNode) {
+	if !(iri.IsAbsolute(vocab) || iri.IsRelative(vocab) || vocab == BlankNode) {
 		return ErrInvalidVocabMapping
 	}
 
-	u, err := p.expandIRI(ctx, result, vocab.Value, true, true, nil)
+	u, err := p.expandIRI(ctx, result, vocab, true, true, nil)
 	if err != nil {
 		return err
 	}
@@ -810,22 +823,22 @@ func (p *Processor) handleVocab(ctx context.Context, result *Context, vocab null
 	return nil
 }
 
-func (p *Processor) handleBase(result *Context, base null[string]) error {
+func (p *Processor) handleBase(result *Context, base string, isNull bool) error {
 	// 5.7.2)
-	if !base.Valid {
+	if isNull {
 		result.currentBaseIRI = ""
 		return nil
 	}
 
 	// 5.7.3)
-	if iri.IsAbsolute(base.Value) {
-		result.currentBaseIRI = base.Value
+	if iri.IsAbsolute(base) {
+		result.currentBaseIRI = base
 		return nil
 	}
 
 	// 5.7.4)
-	if iri.IsRelative(base.Value) {
-		u, err := iri.Resolve(result.currentBaseIRI, base.Value)
+	if iri.IsRelative(base) {
+		u, err := iri.Resolve(result.currentBaseIRI, base)
 		if err != nil {
 			return ErrInvalidBaseIRI
 		}
@@ -919,8 +932,8 @@ func (p *Processor) handleImport(
 	return importedTerms, nil
 }
 
-func (p *Processor) handleVersion(ver null[float64]) error {
-	if ver.Value != 1.1 {
+func (p *Processor) handleVersion(ver float64) error {
+	if ver != 1.1 {
 		return ErrInvalidVersionValue
 	}
 

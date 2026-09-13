@@ -658,7 +658,7 @@ func selectTerm(
 	return ""
 }
 
-func flags(isNil bool, set, null termFlag) termFlag {
+func flags[T twiddle.Size](isNil bool, set, null T) T {
 	if isNil {
 		return null
 	}
