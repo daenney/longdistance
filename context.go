@@ -281,7 +281,10 @@ func (p *Processor) context(
 			}
 
 			// 5.12)
-			defined := map[string]termState{}
+			defined := make(map[string]termState, len(ctxObj.Terms))
+			if n := len(ctxObj.Terms); n > 8 && len(result.defs) == 0 {
+				result.defs = make(map[string]*Term, n)
+			}
 
 			// 5.13)
 			for k := range ctxObj.Terms {
