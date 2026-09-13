@@ -83,17 +83,6 @@ func (t *Term) equalWithoutProtected(ot *Term) bool {
 	return true
 }
 
-func (t *Term) IsZero() bool {
-	if t == nil {
-		return true
-	}
-	return t.IRI == "" && !t.Prefix && !t.Protected &&
-		!t.Reverse && t.BaseIRI == "" && t.Context == nil &&
-		t.Container == nil && t.Direction == "" &&
-		t.Index == "" && t.Language == "" && t.Nest == "" &&
-		t.Type == ""
-}
-
 type createTermOptions struct {
 	baseURL   string
 	protected bool
@@ -320,7 +309,7 @@ func (p *Processor) createTerm(
 		}
 
 		// 13.7
-		activeCtx.defs[term] = termDef
+		activeCtx.defs[term] = &termDef
 		if termDef.Prefix {
 			activeCtx.prefixes[term] = struct{}{}
 		}
@@ -606,11 +595,11 @@ func (p *Processor) createTerm(
 			return ErrProtectedTermRedefinition
 		}
 		// 27.2)
-		termDef = oldDef
+		termDef = *oldDef
 	}
 
 	// 28)
-	activeCtx.defs[term] = termDef
+	activeCtx.defs[term] = &termDef
 	if termDef.Prefix {
 		activeCtx.prefixes[term] = struct{}{}
 	}

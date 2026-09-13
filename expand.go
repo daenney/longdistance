@@ -121,7 +121,7 @@ func (p *Processor) expand(
 		return nil, ErrFrameExpansionUnsupported
 	}
 
-	termDef := activeCtx.defs[activeProp]
+	termDef, _ := activeCtx.lookup(activeProp)
 
 	// 3)
 	// If there was no term definition, then .Context is nil.
@@ -187,7 +187,7 @@ func (p *Processor) expandArray(
 	dec *jsontext.Decoder,
 	baseURL string,
 	opts expandOptions,
-	termDef Term,
+	termDef *Term,
 ) ([]Node, error) {
 	if dec.PeekKind() == jsontext.KindEndArray {
 		if _, err := dec.ReadToken(); err != nil {
@@ -319,7 +319,7 @@ func (p *Processor) expandObject(
 	dec *jsontext.Decoder,
 	baseURL string,
 	opts expandOptions,
-	termDef Term,
+	termDef *Term,
 	propContext jsontext.Value,
 ) ([]Node, error) {
 	// this is a bit unfortunate, but we have to go through all keys in the
@@ -412,7 +412,7 @@ func (p *Processor) expandObject(
 
 		for _, term := range stringTerms {
 			if tscopeDef, ok := typContext.defs[term]; ok && tscopeDef.Context != nil {
-				adef := activeCtx.defs[term]
+				adef, _ := activeCtx.lookup(term)
 				ropts := newCtxProcessingOpts()
 				ropts.propagate = false
 
@@ -833,7 +833,7 @@ mainLoop:
 		}
 
 		// 13.5)
-		termDef := activeCtx.defs[key]
+		termDef, _ := activeCtx.lookup(key)
 		cnt := termDef.Container
 		expVal := []Node{}
 
@@ -880,7 +880,7 @@ mainLoop:
 					}
 
 					// 13.7.4.2.3)
-					if ldef := activeCtx.defs[langKey]; ldef.IRI != KeywordNone && langKey != KeywordNone {
+					if ldef, _ := activeCtx.lookup(langKey); ldef.IRI != KeywordNone && langKey != KeywordNone {
 						// 13.7.4.2.4)
 						obj.Language = langKey
 					}
@@ -1122,7 +1122,7 @@ mainLoop:
 			}
 			// 14.2.2)
 			nestCtx := activeCtx
-			if termDef := activeCtx.defs[k]; termDef.Context != nil {
+			if termDef, _ := activeCtx.lookup(k); termDef.Context != nil {
 				ropts := newCtxProcessingOpts()
 				ropts.override = true
 
@@ -1183,7 +1183,7 @@ func (p *Processor) expandValue(
 	property string,
 	value jsontext.Value,
 ) (Node, error) {
-	def := ldContext.defs[property]
+	def, _ := ldContext.lookup(property)
 	result := Node{}
 
 	switch def.Type {

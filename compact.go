@@ -495,9 +495,9 @@ func (p *Processor) compactArray(
 	elems []Node,
 	compactArrays bool,
 ) (*compactNode, error) {
-	var activeTermDefinition Term
+	activeTermDefinition := &emptyTerm
 	if activeProperty != "" {
-		activeTermDefinition = activeContext.defs[activeProperty]
+		activeTermDefinition, _ = activeContext.lookup(activeProperty)
 	}
 
 	// 3.1)
@@ -542,9 +542,9 @@ func (p *Processor) compactNode(
 	element Node,
 	compactArrays bool,
 ) (*compactNode, error) {
-	var activeTermDefinition Term
+	activeTermDefinition := &emptyTerm
 	if activeProperty != "" {
-		activeTermDefinition = activeContext.defs[activeProperty]
+		activeTermDefinition, _ = activeContext.lookup(activeProperty)
 	}
 
 	// 1)
@@ -569,7 +569,7 @@ func (p *Processor) compactNode(
 			return nil, err
 		}
 		activeContext = nctx
-		activeTermDefinition = activeContext.defs[activeProperty]
+		activeTermDefinition, _ = activeContext.lookup(activeProperty)
 	}
 
 	// 7)
@@ -875,7 +875,7 @@ func (p *Processor) compactNode(
 				return nil, err
 			}
 
-			itemDef := activeContext.defs[itemActiveProperty]
+			itemDef, _ := activeContext.lookup(itemActiveProperty)
 
 			// 12.8.4)
 			container := itemDef.Container
@@ -1284,7 +1284,7 @@ func (p *Processor) compactValue(
 ) (*compactNode, error) {
 	// 1) 2) and 3) aren't needed
 
-	def, defOK := ctx.defs[prop]
+	def, defOK := ctx.lookup(prop)
 
 	// 4)
 	language := cmp.Or(

@@ -23,7 +23,7 @@ const RemoteContextLimit = 10
 
 // Context represents a processed JSON-LD context.
 type Context struct {
-	defs            map[string]Term
+	defs            map[string]*Term
 	prefixes        map[string]struct{}
 	protected       map[string]struct{}
 	currentBaseIRI  string
@@ -56,7 +56,7 @@ func (l *lazyInverse) get(iri string) (map[string]mapping, bool) {
 // the current and original base IRI.
 func newContext(documentURL string) *Context {
 	return &Context{
-		defs:            make(map[string]Term),
+		defs:            make(map[string]*Term),
 		prefixes:        make(map[string]struct{}, 8),
 		protected:       make(map[string]struct{}),
 		currentBaseIRI:  documentURL,
@@ -65,8 +65,8 @@ func newContext(documentURL string) *Context {
 }
 
 // Terms returns an iterator over context term definitions.
-func (c *Context) Terms() iter.Seq2[string, Term] {
-	return func(yield func(string, Term) bool) {
+func (c *Context) Terms() iter.Seq2[string, *Term] {
+	return func(yield func(string, *Term) bool) {
 		for k, v := range c.defs {
 			if !yield(k, v) {
 				return
@@ -114,6 +114,13 @@ func (c *Context) isBlank() bool {
 		c.defaultDirection == "" &&
 		c.defaultLang == "" &&
 		c.inverse == nil
+}
+
+var emptyTerm Term
+
+func (c *Context) lookup(s string) (*Term, bool) {
+	val, ok := c.defs[s]
+	return cmp.Or(val, &emptyTerm), ok
 }
 
 // Context takes in [io.Reader] and parses it into a [Context].

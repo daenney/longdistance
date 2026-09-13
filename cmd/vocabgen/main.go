@@ -83,10 +83,10 @@ func makeTerms(
 	proc *ld.Processor,
 	documentURL string,
 	namespace string,
-	terms iter.Seq2[string, ld.Term],
+	terms iter.Seq2[string, *ld.Term],
 ) []string {
 	texts := make([]string, 0, 100)
-	scoped := make(map[string]ld.Term, 20)
+	scoped := make(map[string]*ld.Term, 20)
 
 	for term, def := range terms {
 		if def.Prefix {
