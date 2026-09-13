@@ -1143,7 +1143,7 @@ func (p *Processor) compactNode(
 					// 12.8.9.6)
 
 					// 12.8.9.6.1)
-					expIdx, err := p.expandIRI(ctx, activeContext, indexKey, false, false, nil, nil)
+					expIdx, err := p.expandIRI(ctx, activeContext, indexKey, false, false, nil)
 					if err != nil {
 						return nil, err
 					}
@@ -1213,7 +1213,7 @@ func (p *Processor) compactNode(
 						// 12.8.9.8.4)
 						if len(compactedItem.Properties) == 1 {
 							k := compactedItem.Properties[0].Attr
-							expIri, err := p.expandIRI(ctx, activeContext, k, false, true, nil, nil)
+							expIri, err := p.expandIRI(ctx, activeContext, k, false, true, nil)
 							if err != nil {
 								return nil, err
 							}
@@ -1365,7 +1365,7 @@ func (p *Processor) nestFor(
 	}
 
 	// 12.8.2.1)
-	term, err := p.expandIRI(ctx, activeContext, edef.Nest, false, true, nil, nil)
+	term, err := p.expandIRI(ctx, activeContext, edef.Nest, false, true, nil)
 	if err != nil {
 		return nil, err
 	}

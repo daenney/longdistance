@@ -392,7 +392,7 @@ func (p *Processor) expandObject(
 	// 11) Find @type key and process type-scoped contexts
 	var typeVal jsontext.Value
 	for k, v := range obj {
-		u, err := p.expandIRI(ctx, activeCtx, k, false, true, nil, nil)
+		u, err := p.expandIRI(ctx, activeCtx, k, false, true, nil)
 		if err != nil {
 			continue
 		}
@@ -435,7 +435,7 @@ func (p *Processor) expandObject(
 	if len(stringTerms) > 0 {
 		lastTerm := stringTerms[len(stringTerms)-1]
 
-		u, err := p.expandIRI(ctx, activeCtx, lastTerm, false, true, nil, nil)
+		u, err := p.expandIRI(ctx, activeCtx, lastTerm, false, true, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -536,7 +536,7 @@ mainLoop:
 		}
 
 		// 13.2)
-		expProp, err := p.expandIRI(ctx, activeCtx, key, false, true, nil, nil)
+		expProp, err := p.expandIRI(ctx, activeCtx, key, false, true, nil)
 		if err != nil {
 			return err
 		}
@@ -583,7 +583,7 @@ mainLoop:
 					return ErrInvalidIDValue
 				}
 
-				iri, err := p.expandIRI(ctx, activeCtx, s, true, false, nil, nil)
+				iri, err := p.expandIRI(ctx, activeCtx, s, true, false, nil)
 				if err != nil {
 					return err
 				}
@@ -616,7 +616,7 @@ mainLoop:
 
 				iris := make([]string, 0, len(vals))
 				for _, v := range vals {
-					u, err := p.expandIRI(ctx, typContext, v, true, true, nil, nil)
+					u, err := p.expandIRI(ctx, typContext, v, true, true, nil)
 					if err != nil {
 						return err
 					}
@@ -936,7 +936,7 @@ mainLoop:
 				}
 
 				// 13.8.3.4)
-				expIdx, err := p.expandIRI(ctx, activeCtx, idx, false, true, nil, nil)
+				expIdx, err := p.expandIRI(ctx, activeCtx, idx, false, true, nil)
 				if err != nil {
 					return err
 				}
@@ -980,7 +980,7 @@ mainLoop:
 							}
 
 							// 13.8.3.7.2.2)
-							expIdxKey, err := p.expandIRI(ctx, activeCtx, idxKey, false, true, nil, nil)
+							expIdxKey, err := p.expandIRI(ctx, activeCtx, idxKey, false, true, nil)
 							if err != nil {
 								return err
 							}
@@ -1005,7 +1005,7 @@ mainLoop:
 						} else if slices.Contains(cnt, KeywordID) && !item.Has(KeywordID) {
 							// 13.8.3.7.4)
 							idx, err := p.expandIRI(ctx, activeCtx,
-								idx, true, false, nil, nil)
+								idx, true, false, nil)
 							if err != nil {
 								return err
 							}
@@ -1157,7 +1157,7 @@ func (p *Processor) expandsToKeyword(
 		res, err := p.expandIRI(
 			ctx,
 			activeContext,
-			k, false, true, nil, nil,
+			k, false, true, nil,
 		)
 
 		if err != nil {
@@ -1193,7 +1193,7 @@ func (p *Processor) expandValue(
 			return result, err
 		}
 
-		u, err := p.expandIRI(ctx, ldContext, string(val), true, def.Type == KeywordVocab, nil, nil)
+		u, err := p.expandIRI(ctx, ldContext, string(val), true, def.Type == KeywordVocab, nil)
 		if err != nil {
 			return result, err
 		}

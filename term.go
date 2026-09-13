@@ -134,6 +134,8 @@ type term struct {
 	Prefix         null[bool]
 	Protected      null[bool]
 	HasUnknownKeys bool
+
+	state termState
 }
 
 func (p *Processor) createTerm(
@@ -141,16 +143,19 @@ func (p *Processor) createTerm(
 	activeCtx *Context,
 	localCtx map[string]*term,
 	term string,
-	defined map[string]termState,
 	opts createTermOptions,
 ) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
+	// 3) grab input directly, since it is tracking term definition
+	// state, not the separated defined map from the spec
+	input := localCtx[term]
+
 	// 1)
-	if state := defined[term]; state != termUndefined {
-		if state == termDefined {
+	if input.state != termUndefined {
+		if input.state == termDefined {
 			return nil
 		}
 		return ErrCyclicIRIMapping
@@ -160,11 +165,8 @@ func (p *Processor) createTerm(
 	if term == "" {
 		return ErrInvalidTermDefinition
 	} else {
-		defined[term] = termDefining
+		input.state = termDefining
 	}
-
-	// 3)
-	input := localCtx[term]
 
 	// 4)
 	if term == KeywordType {
@@ -235,7 +237,7 @@ func (p *Processor) createTerm(
 	// 12)
 	if input.Type != "" {
 		// 12.2)
-		u, err := p.expandIRI(ctx, activeCtx, input.Type, false, true, localCtx, defined)
+		u, err := p.expandIRI(ctx, activeCtx, input.Type, false, true, localCtx)
 		if err != nil {
 			return ErrInvalidTypeMapping
 		}
@@ -275,7 +277,7 @@ func (p *Processor) createTerm(
 		}
 
 		// 13.4)
-		u, err := p.expandIRI(ctx, activeCtx, input.Reverse, false, true, localCtx, defined)
+		u, err := p.expandIRI(ctx, activeCtx, input.Reverse, false, true, localCtx)
 		if err != nil {
 			return ErrInvalidIRIMapping
 		}
@@ -313,7 +315,7 @@ func (p *Processor) createTerm(
 		if termDef.Prefix {
 			activeCtx.prefixes[term] = struct{}{}
 		}
-		defined[term] = termDefined
+		input.state = termDefined
 		return nil
 	} else if input.ID.Set && input.ID.Valid && term != input.ID.Value {
 		// 14.2)
@@ -325,7 +327,7 @@ func (p *Processor) createTerm(
 		}
 
 		// 14.2.3)
-		u, err := p.expandIRI(ctx, activeCtx, input.ID.Value, false, true, localCtx, defined)
+		u, err := p.expandIRI(ctx, activeCtx, input.ID.Value, false, true, localCtx)
 		if err != nil {
 			return err
 		}
@@ -343,10 +345,10 @@ func (p *Processor) createTerm(
 		// 14.2.4)
 		if strings.Contains(term, "/") || (!strings.HasPrefix(term, ":") && !strings.HasSuffix(term, ":") && strings.Contains(term, ":")) {
 			// 14.2.4.1)
-			defined[term] = termDefined
+			input.state = termDefined
 
 			// 14.2.4.2)
-			tu, err := p.expandIRI(ctx, activeCtx, term, false, true, localCtx, defined)
+			tu, err := p.expandIRI(ctx, activeCtx, term, false, true, localCtx)
 			if err != nil {
 				return ErrInvalidIRIMapping
 			}
@@ -372,7 +374,7 @@ func (p *Processor) createTerm(
 		// 15.1)
 		if !strings.HasPrefix(suffix, "//") {
 			if _, ok := localCtx[prefix]; ok {
-				if err := p.createTerm(ctx, activeCtx, localCtx, prefix, defined, newCreateTermOptions()); err != nil {
+				if err := p.createTerm(ctx, activeCtx, localCtx, prefix, newCreateTermOptions()); err != nil {
 					return err
 				}
 			}
@@ -388,7 +390,7 @@ func (p *Processor) createTerm(
 	} else if strings.Contains(term, "/") {
 		// 16)
 		// 16.2)
-		u, err := p.expandIRI(ctx, activeCtx, term, false, true, nil, nil)
+		u, err := p.expandIRI(ctx, activeCtx, term, false, true, nil)
 		if err != nil {
 			return ErrInvalidIRIMapping
 		}
@@ -486,7 +488,7 @@ func (p *Processor) createTerm(
 		}
 
 		// 20.2)
-		u, err := p.expandIRI(ctx, activeCtx, input.Index, false, true, localCtx, defined)
+		u, err := p.expandIRI(ctx, activeCtx, input.Index, false, true, localCtx)
 		if err != nil {
 			return ErrInvalidTermDefinition
 		}
@@ -603,7 +605,7 @@ func (p *Processor) createTerm(
 	if termDef.Prefix {
 		activeCtx.prefixes[term] = struct{}{}
 	}
-	defined[term] = termDefined
+	input.state = termDefined
 	return nil
 }
 

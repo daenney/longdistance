@@ -297,7 +297,6 @@ func (p *Processor) context(
 			}
 
 			// 5.12)
-			defined := make(map[string]termState, len(ctxObj.Terms))
 			if n := len(ctxObj.Terms); n > 8 && len(result.defs) == 0 {
 				result.defs = make(map[string]*Term, n)
 			}
@@ -314,7 +313,6 @@ func (p *Processor) context(
 					result,
 					ctxObj.Terms,
 					k,
-					defined,
 					newOpts,
 				); err != nil {
 					return nil, err
@@ -804,7 +802,7 @@ func (p *Processor) handleVocab(ctx context.Context, result *Context, vocab null
 		return ErrInvalidVocabMapping
 	}
 
-	u, err := p.expandIRI(ctx, result, vocab.Value, true, true, nil, nil)
+	u, err := p.expandIRI(ctx, result, vocab.Value, true, true, nil)
 	if err != nil {
 		return err
 	}

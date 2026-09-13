@@ -15,7 +15,6 @@ func (p *Processor) expandIRI(
 	relative bool,
 	vocab bool,
 	localCtx map[string]*term,
-	defined map[string]termState,
 ) (string, error) {
 	// 1)
 	if isKeyword(value) {
@@ -35,18 +34,15 @@ func (p *Processor) expandIRI(
 
 	// 3)
 	if hasLocal {
-		if _, ok := localCtx[value]; ok {
-			if state := defined[value]; state != termDefined {
-				if err := p.createTerm(
-					ctx,
-					activeCtx,
-					localCtx,
-					value,
-					defined,
-					newCreateTermOptions(),
-				); err != nil {
-					return "", err
-				}
+		if t, ok := localCtx[value]; ok && t.state != termDefined {
+			if err := p.createTerm(
+				ctx,
+				activeCtx,
+				localCtx,
+				value,
+				newCreateTermOptions(),
+			); err != nil {
+				return "", err
 			}
 		}
 	}
@@ -72,18 +68,15 @@ func (p *Processor) expandIRI(
 
 			// 6.3)
 			if hasLocal {
-				if _, ok := localCtx[prefix]; ok {
-					if state := defined[prefix]; state != termDefined {
-						if err := p.createTerm(
-							ctx,
-							activeCtx,
-							localCtx,
-							prefix,
-							defined,
-							newCreateTermOptions(),
-						); err != nil {
-							return "", err
-						}
+				if t, ok := localCtx[prefix]; ok && t.state != termDefined {
+					if err := p.createTerm(
+						ctx,
+						activeCtx,
+						localCtx,
+						prefix,
+						newCreateTermOptions(),
+					); err != nil {
+						return "", err
 					}
 				}
 			}
