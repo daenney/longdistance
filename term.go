@@ -207,6 +207,8 @@ func (p *Processor) createTerm(
 	// 6)
 	if oldDefOK {
 		delete(activeCtx.defs, term)
+		delete(activeCtx.prefixes, term)
+		delete(activeCtx.protected, term)
 	}
 
 	// 10)
