@@ -14,7 +14,7 @@ func (p *Processor) expandIRI(
 	value string,
 	relative bool,
 	vocab bool,
-	localCtx map[string]*term,
+	localCtx map[string]*Term,
 ) (string, error) {
 	// 1)
 	if isKeyword(value) {

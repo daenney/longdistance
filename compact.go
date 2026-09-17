@@ -29,7 +29,7 @@ func (p *Processor) compactIRI(
 
 	// this should be done as the first thing in step 10
 	// but we can avoid a ton of work by doing it early here
-	if strings.HasPrefix(key, BlankNode) {
+	if isBlankNode(key) {
 		return key, nil
 	}
 

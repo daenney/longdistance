@@ -39,16 +39,22 @@ const (
 	flagDirection
 	flagNullDirection // @direction was explicitly null
 
-	flagPrefix    // @prefix set, read term.Prefix for the value
-	flagProtected // @protected set, read term.Protected for the value
+	flagPrefix    // @prefix set, read Term.Prefix for the value
+	flagProtected // @protected set, read Term.Protected for the value
+
+	flagType    // @type set, not null or empty
+	flagReverse // @reverse set, not null or empty
 )
 
-// Term represents a term definition in a JSON-LD context.
+// Term represents a term definition in a JSON-LD context after it's been fully processed.
 type Term struct {
 	IRI       string
 	Prefix    bool
 	Protected bool
 	Reverse   bool
+
+	state termState
+	flags twiddle.Field[termFlag]
 
 	BaseIRI   string
 	Context   jsontext.Value
@@ -110,29 +116,12 @@ type createTermOptions struct {
 	override  bool
 }
 
-type term struct {
-	ID        string
-	Type      string
-	Reverse   string
-	Container []string
-	Index     string
-	Context   jsontext.Value
-	Language  string
-	Direction string
-	Nest      string
-	Prefix    bool
-	Protected bool
-
-	flags twiddle.Field[termFlag]
-	state termState
-}
-
 func (p *Processor) createTerm(
 	ctx context.Context,
 	activeCtx *Context,
-	localCtx map[string]*term,
+	localCtx map[string]*Term,
 	term string,
-	input *term,
+	termDef *Term,
 	opts createTermOptions,
 ) error {
 	if err := ctx.Err(); err != nil {
@@ -142,8 +131,8 @@ func (p *Processor) createTerm(
 	// 3) its the already passed in term
 
 	// 1)
-	if input.state != termUndefined {
-		if input.state == termDefined {
+	if termDef.state != termUndefined {
+		if termDef.state == termDefined {
 			return nil
 		}
 		return ErrCyclicIRIMapping
@@ -153,7 +142,7 @@ func (p *Processor) createTerm(
 	if term == "" {
 		return ErrInvalidTermDefinition
 	} else {
-		input.state = termDefining
+		termDef.state = termDefining
 	}
 
 	// 6) do this here because 4) also uses this lookup
@@ -172,24 +161,24 @@ func (p *Processor) createTerm(
 		}
 
 		// For @type, only @container and @protected are allowed
-		if input.flags.Any(flagID, flagNullID) || input.Type != "" || input.Reverse != "" ||
-			input.Index != "" || input.Context != nil ||
-			input.flags.Any(flagLanguage, flagNullLanguage) ||
-			input.flags.Any(flagDirection, flagNullDirection) ||
-			input.Nest != "" || input.flags.Any(flagPrefix) ||
-			input.flags.Any(flagUnknownKeys) {
+		if termDef.flags.Any(flagID, flagNullID, flagType, flagReverse) ||
+			termDef.Index != "" || termDef.Context != nil ||
+			termDef.flags.Any(flagLanguage, flagNullLanguage) ||
+			termDef.flags.Any(flagDirection, flagNullDirection) ||
+			termDef.Nest != "" || termDef.flags.Any(flagPrefix) ||
+			termDef.flags.Any(flagUnknownKeys) {
 			return ErrKeywordRedefinition
 		}
 
 		// @container must be @set if provided, and is required for non-simple definitions
-		if input.flags.Any(flagContainer) {
-			if len(input.Container) != 1 {
+		if termDef.flags.Any(flagContainer) {
+			if len(termDef.Container) != 1 {
 				return ErrKeywordRedefinition
 			}
-			if input.Container[0] != KeywordSet {
+			if termDef.Container[0] != KeywordSet {
 				return ErrKeywordRedefinition
 			}
-		} else if input.flags.None(flagSimple, flagNull) {
+		} else if termDef.flags.None(flagSimple, flagNull) {
 			return ErrKeywordRedefinition
 		}
 	} else {
@@ -211,17 +200,14 @@ func (p *Processor) createTerm(
 		delete(activeCtx.protected, term)
 	}
 
-	// 10)
-	termDef := Term{
-		Protected: opts.protected,
-	}
-
-	// 11)
-	if input.flags.Any(flagProtected) {
+	// 10) 11) @protected is already on the Term, only needs validating
+	// or passing the default if not present
+	if termDef.flags.Any(flagProtected) {
 		if p.modeLD10 {
 			return ErrInvalidTermDefinition
 		}
-		termDef.Protected = input.Protected
+	} else {
+		termDef.Protected = opts.protected
 	}
 
 	// at this point protected is finalised, so add the
@@ -231,9 +217,9 @@ func (p *Processor) createTerm(
 	}
 
 	// 12)
-	if input.Type != "" {
+	if termDef.flags.Any(flagType) {
 		// 12.2)
-		u, err := p.expandIRI(ctx, activeCtx, input.Type, false, true, localCtx)
+		u, err := p.expandIRI(ctx, activeCtx, termDef.Type, false, true, localCtx)
 		if err != nil {
 			return ErrInvalidTypeMapping
 		}
@@ -259,39 +245,38 @@ func (p *Processor) createTerm(
 	}
 
 	// 13)
-	if input.Reverse != "" {
+	if termDef.flags.Any(flagReverse) {
 		// 13.1)
-		if input.flags.Any(flagID, flagNullID) || input.Nest != "" {
+		if termDef.flags.Any(flagID, flagNullID) || termDef.Nest != "" {
 			return ErrInvalidReverseProperty
 		}
 
 		// 13.3)
-		if looksLikeKeyword(input.Reverse) {
+		if looksLikeKeyword(termDef.IRI) {
 			p.logger.Warn("keyword lookalike value encountered",
-				slog.String("value", input.Reverse))
+				slog.String("value", termDef.IRI))
 			return nil
 		}
 
 		// 13.4)
-		u, err := p.expandIRI(ctx, activeCtx, input.Reverse, false, true, localCtx)
+		u, err := p.expandIRI(ctx, activeCtx, termDef.IRI, false, true, localCtx)
 		if err != nil {
 			return ErrInvalidIRIMapping
 		}
 
-		if !iri.IsAbsolute(u) && u != BlankNode {
+		if !iri.IsAbsolute(u) && !isBlankNode(u) {
 			return ErrInvalidIRIMapping
 		}
 
 		termDef.IRI = u
 
 		// 13.5)
-		if input.flags.Any(flagContainer, flagNullContainer) {
-			if input.flags.Any(flagContainer) {
-				if input.Container[0] != KeywordSet &&
-					input.Container[0] != KeywordIndex {
+		if termDef.flags.Any(flagContainer, flagNullContainer) {
+			if termDef.flags.Any(flagContainer) {
+				if termDef.Container[0] != KeywordSet &&
+					termDef.Container[0] != KeywordIndex {
 					return ErrInvalidReverseProperty
 				}
-				termDef.Container = input.Container
 			} else {
 				termDef.Container = nil
 			}
@@ -302,33 +287,30 @@ func (p *Processor) createTerm(
 
 		// This whole step is missing in the spec but without
 		// it t0131 can't pass. So. YOLO.
-		if slices.Contains(termDef.Container, KeywordIndex) && input.Index != "" {
-			termDef.Index = input.Index
+		if !slices.Contains(termDef.Container, KeywordIndex) {
+			termDef.Index = ""
 		}
 
 		// 13.7
-		activeCtx.defs[term] = &termDef
-		if termDef.Prefix {
-			activeCtx.prefixes[term] = struct{}{}
-		}
-		input.state = termDefined
+		termDef.state = termDefined
+		activeCtx.define(term, termDef)
 		return nil
-	} else if input.flags.Any(flagID) && term != input.ID {
+	} else if termDef.flags.Any(flagID) && term != termDef.IRI {
 		// 14.2)
-		if !isKeyword(input.ID) && looksLikeKeyword(input.ID) {
+		if !isKeyword(termDef.IRI) && looksLikeKeyword(termDef.IRI) {
 			// 14.2.2)
 			p.logger.Warn("keyword lookalike value encountered",
-				slog.String("value", input.ID))
+				slog.String("value", termDef.IRI))
 			return nil
 		}
 
 		// 14.2.3)
-		u, err := p.expandIRI(ctx, activeCtx, input.ID, false, true, localCtx)
+		u, err := p.expandIRI(ctx, activeCtx, termDef.IRI, false, true, localCtx)
 		if err != nil {
 			return err
 		}
 
-		if !isKeyword(u) && !iri.IsAbsolute(u) && u != BlankNode {
+		if !isKeyword(u) && !iri.IsAbsolute(u) && !isBlankNode(u) {
 			return ErrInvalidIRIMapping
 		}
 
@@ -341,7 +323,7 @@ func (p *Processor) createTerm(
 		// 14.2.4)
 		if strings.Contains(term, "/") || (!strings.HasPrefix(term, ":") && !strings.HasSuffix(term, ":") && strings.Contains(term, ":")) {
 			// 14.2.4.1)
-			input.state = termDefined
+			termDef.state = termDefined
 
 			// 14.2.4.2)
 			tu, err := p.expandIRI(ctx, activeCtx, term, false, true, localCtx)
@@ -354,14 +336,15 @@ func (p *Processor) createTerm(
 			}
 		} else {
 			// 14.2.5)
-			if input.flags.Any(flagSimple) && iri.EndsInGenDelim(u) || u == BlankNode {
+			if termDef.flags.Any(flagSimple) &&
+				(iri.EndsInGenDelim(u) || isBlankNode(u)) {
 				if v, ok := p.remapPrefixIRIs[u]; ok {
 					termDef.IRI = v
 				}
 				termDef.Prefix = true
 			}
 		}
-	} else if input.flags.Any(flagNullID) {
+	} else if termDef.flags.Any(flagNullID) {
 		// 14.1) @id was explicitly null
 	} else if strings.Contains(term[1:], ":") {
 		// 15)
@@ -405,13 +388,13 @@ func (p *Processor) createTerm(
 	}
 
 	// 19)
-	if input.flags.Any(flagContainer, flagNullContainer) {
-		if input.flags.Any(flagNullContainer) {
+	if termDef.flags.Any(flagContainer, flagNullContainer) {
+		if termDef.flags.Any(flagNullContainer) {
 			return ErrInvalidContainerMapping
 		}
 
 		// 19.1)
-		values := input.Container
+		values := termDef.Container
 		for _, vl := range values {
 			switch vl {
 			case KeywordGraph, KeywordID, KeywordIndex,
@@ -474,7 +457,7 @@ func (p *Processor) createTerm(
 	}
 
 	// 20)
-	if input.Index != "" {
+	if termDef.Index != "" {
 		// 20.1)
 		if p.modeLD10 {
 			return ErrInvalidTermDefinition
@@ -484,7 +467,7 @@ func (p *Processor) createTerm(
 		}
 
 		// 20.2)
-		u, err := p.expandIRI(ctx, activeCtx, input.Index, false, true, localCtx)
+		u, err := p.expandIRI(ctx, activeCtx, termDef.Index, false, true, localCtx)
 		if err != nil {
 			return ErrInvalidTermDefinition
 		}
@@ -493,11 +476,10 @@ func (p *Processor) createTerm(
 		}
 
 		// 20.3)
-		termDef.Index = input.Index
 	}
 
 	// 21)
-	if input.Context != nil {
+	if termDef.Context != nil {
 		// 21.1)
 		if p.modeLD10 {
 			return ErrInvalidTermDefinition
@@ -508,7 +490,7 @@ func (p *Processor) createTerm(
 		resolvOpts.override = true
 		resolvOpts.remotes = opts.remotes
 		resolvOpts.validate = false
-		ctxDec := jsontext.NewDecoder(bytes.NewBuffer(input.Context))
+		ctxDec := jsontext.NewDecoder(bytes.NewBuffer(termDef.Context))
 		_, err := p.context(
 			ctx,
 			activeCtx,
@@ -521,49 +503,46 @@ func (p *Processor) createTerm(
 			return ErrInvalidScopedContext
 		}
 
-		// 21.4
-		termDef.Context = input.Context
+		// 21.4)
 		termDef.BaseIRI = opts.baseURL
 	}
 
-	// 22)
-	if input.flags.Any(flagLanguage, flagNullLanguage) && input.Type == "" {
-		if input.flags.Any(flagNullLanguage) {
-			termDef.Language = KeywordNull
-		} else {
-			termDef.Language = strings.ToLower(input.Language)
-		}
+	// 22) this is slightly inverted from the spec, as we need to drop the decoded value
+	if termDef.flags.None(flagLanguage, flagNullLanguage) || termDef.flags.Any(flagType) {
+		termDef.Language = ""
+	} else if termDef.flags.Any(flagNullLanguage) {
+		termDef.Language = KeywordNull
+	} else {
+		termDef.Language = strings.ToLower(termDef.Language)
 	}
 
-	// 23)
-	if input.flags.Any(flagDirection, flagNullDirection) && input.Type == "" {
-		if input.flags.Any(flagNullDirection) {
-			termDef.Direction = KeywordNull
-		} else {
-			switch input.Direction {
-			case DirectionLTR, DirectionRTL:
-			default:
-				return ErrInvalidBaseDirection
-			}
-			termDef.Direction = input.Direction
+	// 23) same here, drop the decoded value
+	if termDef.flags.None(flagDirection, flagNullDirection) || termDef.flags.Any(flagType) {
+		termDef.Direction = ""
+	} else if termDef.flags.Any(flagNullDirection) {
+		termDef.Direction = KeywordNull
+	} else {
+		switch termDef.Direction {
+		case DirectionLTR, DirectionRTL:
+		default:
+			return ErrInvalidBaseDirection
 		}
 	}
 
 	// 24)
-	if input.Nest != "" {
+	if termDef.Nest != "" {
 		// 24.1)
 		if p.modeLD10 {
 			return ErrInvalidTermDefinition
 		}
 
-		if isKeyword(input.Nest) && input.Nest != KeywordNest {
+		if isKeyword(termDef.Nest) && termDef.Nest != KeywordNest {
 			return ErrInvalidNestValue
 		}
-		termDef.Nest = input.Nest
 	}
 
 	// 25)
-	if input.flags.Any(flagPrefix) {
+	if termDef.flags.Any(flagPrefix) {
 		// 25.1)
 		if p.modeLD10 {
 			return ErrInvalidTermDefinition
@@ -574,34 +553,33 @@ func (p *Processor) createTerm(
 		}
 
 		// 25.3)
-		if input.Prefix && isKeyword(termDef.IRI) {
+		if termDef.Prefix && isKeyword(termDef.IRI) {
 			return ErrInvalidTermDefinition
 		}
-
-		termDef.Prefix = input.Prefix
 	}
 
 	// 26)
-	if input.flags.Any(flagUnknownKeys) {
+	if termDef.flags.Any(flagUnknownKeys) {
 		return ErrInvalidTermDefinition
 	}
 
+	// the definition is complete
+	termDef.state = termDefined
+
 	// 27)
+	def := termDef
 	if oldDefOK && oldDef.Protected && !opts.override {
 		// 27.1)
-		if !oldDef.equalWithoutProtected(&termDef) {
+		if !oldDef.equalWithoutProtected(termDef) {
 			return ErrProtectedTermRedefinition
 		}
+
 		// 27.2)
-		termDef = *oldDef
+		def = oldDef
 	}
 
 	// 28)
-	activeCtx.defs[term] = &termDef
-	if termDef.Prefix {
-		activeCtx.prefixes[term] = struct{}{}
-	}
-	input.state = termDefined
+	activeCtx.define(term, def)
 	return nil
 }
 

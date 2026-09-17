@@ -140,6 +140,14 @@ func (c *Context) lookup(s string) (*Term, bool) {
 	return cmp.Or(val, &emptyTerm), ok
 }
 
+// define stores the final term definition
+func (c *Context) define(term string, def *Term) {
+	c.defs[term] = def
+	if def.Prefix {
+		c.prefixes[term] = struct{}{}
+	}
+}
+
 // Context takes in [io.Reader] and parses it into a [Context].
 func (p *Processor) Context(
 	ctx context.Context,
@@ -480,12 +488,12 @@ type contextObj struct {
 	Protected bool
 
 	flags twiddle.Field[ctxFlag]
-	Terms map[string]*term
+	Terms map[string]*Term
 }
 
 func (p *Processor) decodeCtxObj(ctx context.Context, dec *jsontext.Decoder) (*contextObj, error) {
 	obj := &contextObj{
-		Terms: make(map[string]*term),
+		Terms: make(map[string]*Term),
 	}
 
 	for dec.PeekKind() != jsontext.KindEndObject {
@@ -604,14 +612,14 @@ func (p *Processor) decodeCtxObj(ctx context.Context, dec *jsontext.Decoder) (*c
 	return obj, nil
 }
 
-func (p *Processor) decodeTerm(dec *jsontext.Decoder) (*term, error) {
+func (p *Processor) decodeTerm(dec *jsontext.Decoder) (*Term, error) {
 	switch dec.PeekKind() {
 	case jsontext.KindNull:
 		if err := dec.SkipValue(); err != nil {
 			return nil, err
 		}
 
-		t := &term{}
+		t := &Term{}
 		t.flags.Set(flagNull, flagNullID)
 		return t, nil
 	case jsontext.KindString:
@@ -620,7 +628,7 @@ func (p *Processor) decodeTerm(dec *jsontext.Decoder) (*term, error) {
 			return nil, err
 		}
 
-		t := &term{ID: tok.String()}
+		t := &Term{IRI: tok.String()}
 		t.flags.Set(flagSimple, flagID)
 		return t, nil
 	case jsontext.KindBeginObject:
@@ -635,8 +643,8 @@ func (p *Processor) decodeTerm(dec *jsontext.Decoder) (*term, error) {
 	}
 }
 
-func (p *Processor) decodeTermObj(dec *jsontext.Decoder) (*term, error) {
-	var input term
+func (p *Processor) decodeTermObj(dec *jsontext.Decoder) (*Term, error) {
+	var input Term
 
 	for dec.PeekKind() != jsontext.KindEndObject {
 		tok, err := dec.ReadToken()
@@ -657,7 +665,7 @@ func (p *Processor) decodeTermObj(dec *jsontext.Decoder) (*term, error) {
 				return nil, errors.Join(err, ErrInvalidIRIMapping)
 			}
 
-			input.ID = val
+			input.IRI = val
 			input.flags.Set(flags(isNil, flagID, flagNullID))
 		case KeywordType:
 			val, _, err := jsonutil.DecodeString(dec)
@@ -666,13 +674,19 @@ func (p *Processor) decodeTermObj(dec *jsontext.Decoder) (*term, error) {
 			}
 
 			input.Type = val
+			if val != "" {
+				input.flags.Set(flagType)
+			}
 		case KeywordReverse:
 			val, _, err := jsonutil.DecodeString(dec)
 			if err != nil {
 				return nil, errors.Join(err, ErrInvalidIRIMapping)
 			}
 
-			input.Reverse = val
+			input.IRI = val
+			if val != "" {
+				input.flags.Set(flagReverse)
+			}
 		case KeywordContainer:
 			if p.modeLD10 {
 				// In LD 1.0 it must be a string and only a string
@@ -813,7 +827,7 @@ func (p *Processor) handleVocab(ctx context.Context, result *Context, vocab stri
 	}
 
 	// 5.8.3)
-	if !(iri.IsAbsolute(vocab) || iri.IsRelative(vocab) || vocab == BlankNode) {
+	if !(iri.IsAbsolute(vocab) || iri.IsRelative(vocab) || isBlankNode(vocab)) {
 		return ErrInvalidVocabMapping
 	}
 
@@ -857,8 +871,8 @@ func (p *Processor) handleImport(
 	ctx context.Context,
 	baseURL string,
 	uri string,
-	terms map[string]*term,
-) (map[string]*term, error) {
+	terms map[string]*Term,
+) (map[string]*Term, error) {
 	// 5.6.1)
 	if p.modeLD10 {
 		return nil, ErrInvalidContextEntry
@@ -889,7 +903,7 @@ func (p *Processor) handleImport(
 		return nil, ErrInvalidRemoteContext
 	}
 
-	importedTerms := make(map[string]*term)
+	importedTerms := make(map[string]*Term)
 
 	for dec.PeekKind() != jsontext.KindEndObject {
 		tok, err := dec.ReadToken()
@@ -928,10 +942,7 @@ func (p *Processor) handleImport(
 		return nil, ErrInvalidRemoteContext
 	}
 
-	for k, v := range terms {
-		importedTerms[k] = v
-	}
-
+	maps.Copy(importedTerms, terms)
 	return importedTerms, nil
 }
 

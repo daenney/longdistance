@@ -1,5 +1,7 @@
 package longdistance
 
+import "strings"
+
 // JSON-LD keywords.
 const (
 	KeywordAny       = "@any"
@@ -30,6 +32,11 @@ const (
 	KeywordVersion   = "@version"
 	KeywordVocab     = "@vocab"
 )
+
+// isBlankNode returns if the string is a blank node identifier.
+func isBlankNode(s string) bool {
+	return strings.HasPrefix(s, BlankNode)
+}
 
 // isKeyword returns if the string matches a known JSON-LD keyword.
 func isKeyword(s string) bool {
