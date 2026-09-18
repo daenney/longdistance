@@ -587,6 +587,24 @@ func TestExpandCustom(t *testing.T) {
 			in:  LoadData(t, "w3c/expand/0066-in.jsonld"),
 			err: ld.ErrDisallowedKeyword,
 		},
+		{
+			// https://github.com/w3c/json-ld-api/issues/718
+			name: "empty @container on a reverse property",
+			proc: ld.NewProcessor(),
+			in: jsontext.Value(
+				`{"@context":{"t":{"@reverse":"http://ex/t","@container":[]}},"t":{}}`,
+			),
+			err: ld.ErrInvalidReverseProperty,
+		},
+		{
+			// https://github.com/w3c/json-ld-api/issues/718
+			name: "empty @container on a term",
+			proc: ld.NewProcessor(),
+			in: jsontext.Value(
+				`{"@context":{"t":{"@id":"http://ex/t","@container":[]}},"t":"v"}`,
+			),
+			err: ld.ErrInvalidContainerMapping,
+		},
 	}
 
 	for _, tc := range tests {

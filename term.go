@@ -273,8 +273,9 @@ func (p *Processor) createTerm(
 		// 13.5)
 		if termDef.flags.Any(flagContainer, flagNullContainer) {
 			if termDef.flags.Any(flagContainer) {
-				if termDef.Container[0] != KeywordSet &&
-					termDef.Container[0] != KeywordIndex {
+				if len(termDef.Container) == 0 ||
+					(termDef.Container[0] != KeywordSet &&
+						termDef.Container[0] != KeywordIndex) {
 					return ErrInvalidReverseProperty
 				}
 			} else {
@@ -388,13 +389,17 @@ func (p *Processor) createTerm(
 	}
 
 	// 19)
-	if termDef.flags.Any(flagContainer, flagNullContainer) {
-		if termDef.flags.Any(flagNullContainer) {
+	if termDef.flags.Any(flagNullContainer) {
+		return ErrInvalidContainerMapping
+	}
+
+	if termDef.flags.Any(flagContainer) {
+		// 19.1)
+		values := termDef.Container
+		if len(values) == 0 {
 			return ErrInvalidContainerMapping
 		}
 
-		// 19.1)
-		values := termDef.Container
 		for _, vl := range values {
 			switch vl {
 			case KeywordGraph, KeywordID, KeywordIndex,
@@ -436,8 +441,7 @@ func (p *Processor) createTerm(
 			}
 		}
 
-		// 19.3)
-		termDef.Container = values
+		// 19.3) it's already set, we're just validating
 
 		// 19.4)
 		if slices.Contains(values, KeywordType) {
