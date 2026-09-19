@@ -154,13 +154,6 @@ func (p *Processor) createTerm(
 			return ErrKeywordRedefinition
 		}
 
-		// Check if @type is protected before validating the new definition
-		// If protected and not overriding, return protected term redefinition first
-		if oldDefOK && oldDef.Protected && !opts.override {
-			return ErrProtectedTermRedefinition
-		}
-
-		// For @type, only @container and @protected are allowed
 		if termDef.flags.Any(flagID, flagNullID, flagType, flagReverse) ||
 			termDef.Index != "" || termDef.Context != nil ||
 			termDef.flags.Any(flagLanguage, flagNullLanguage) ||
@@ -170,7 +163,7 @@ func (p *Processor) createTerm(
 			return ErrKeywordRedefinition
 		}
 
-		// @container must be @set if provided, and is required for non-simple definitions
+		// For @type, only @container with @set and @protected are allowed
 		if termDef.flags.Any(flagContainer) {
 			if len(termDef.Container) != 1 {
 				return ErrKeywordRedefinition
@@ -178,7 +171,7 @@ func (p *Processor) createTerm(
 			if termDef.Container[0] != KeywordSet {
 				return ErrKeywordRedefinition
 			}
-		} else if termDef.flags.None(flagSimple, flagNull) {
+		} else if termDef.flags.None(flagSimple, flagNull, flagProtected) {
 			return ErrKeywordRedefinition
 		}
 	} else {
