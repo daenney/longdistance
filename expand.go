@@ -36,36 +36,38 @@ func (e expandOptions) withoutFromMap() expandOptions {
 // Otherwise an empty string.
 func (p *Processor) Expand(
 	ctx context.Context,
-	document io.Reader, url string) ([]Node, error) {
-	opts := expandOptions{}
-	baseIRI := cmp.Or(p.baseIRI, url)
+	document io.Reader,
+	url string,
+) ([]Node, error) {
+	ldCtx := newContext(cmp.Or(p.baseIRI, url))
 
-	var ldCtx *Context
+	if p.expandContext != nil {
+		rawctx := p.expandContext
+		if rawctx.Kind() == jsontext.KindBeginObject {
+			obj, err := jsonutil.ReadObject(rawctx)
+			if err != nil {
+				return nil, errors.Join(err, ErrInvalidLocalContext)
+			}
 
-	if p.expandContext == nil {
-		ldCtx = newContext(baseIRI)
-	} else {
-		obj, err := jsonutil.ReadObject(p.expandContext)
-		if err != nil {
-			return nil, ErrInvalidLocalContext
-		}
-
-		var rawctx jsontext.Value
-		if v, ok := obj[KeywordContext]; ok {
-			rawctx = v
-		} else {
-			rawctx = p.expandContext
+			if v, ok := obj[KeywordContext]; ok {
+				rawctx = v
+			}
 		}
 
 		dec := jsontext.NewDecoder(bytes.NewBuffer(rawctx))
-		ldCtx, err = p.context(ctx, nil, dec, "", newCtxProcessingOpts())
+		res, err := p.context(ctx, ldCtx, dec, ldCtx.originalBaseIRI, newCtxProcessingOpts())
 		if err != nil {
 			return nil, err
 		}
+
+		if res != nil {
+			ldCtx = res
+		}
 	}
 
+	opts := expandOptions{}
 	dec := jsontext.NewDecoder(document)
-	res, err := p.expand(ctx, ldCtx, "", dec, url, opts)
+	res, err := p.expand(ctx, ldCtx, "", dec, cmp.Or(url, p.baseIRI), opts)
 	if err != nil {
 		return nil, err
 	}

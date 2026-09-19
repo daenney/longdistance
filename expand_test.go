@@ -534,6 +534,7 @@ func TestExpandCustom(t *testing.T) {
 	tests := []struct {
 		name string
 		proc *ld.Processor
+		url  string
 		in   jsontext.Value
 		out  jsontext.Value
 		err  error
@@ -605,13 +606,53 @@ func TestExpandCustom(t *testing.T) {
 			),
 			err: ld.ErrInvalidContainerMapping,
 		},
+		{
+			name: "nested context retains IRI from @base",
+			proc: ld.NewProcessor(ld.WithBaseIRI("https://baseopt/")),
+			in: jsontext.Value(
+				`{"@context":{"@base":"https://atbase/","p":{"@id":"https://ex/p"}},` +
+					`"p":{"@context":{"q":"https://ex/q"},"@id":"rel"}}`,
+			),
+			out: jsontext.Value(`[{"https://ex/p":[{"@id":"https://atbase/rel"}]}]`),
+		},
+		{
+			name: "nullified context reverts to base",
+			proc: ld.NewProcessor(ld.WithBaseIRI("https://baseopt/")),
+			url:  "https://doc/d",
+			in: jsontext.Value(
+				`{"@context":[{"@base":"https://atbase/"},null],"@id":"rel","https://ex/p":"v"}`,
+			),
+			out: jsontext.Value(
+				`[{"@id":"https://baseopt/rel","https://ex/p":[{"@value":"v"}]}]`,
+			),
+		},
+		{
+			name: "relative remote context resolves against base",
+			proc: ld.NewProcessor(
+				ld.WithBaseIRI("https://baseopt/"),
+				ld.WithRemoteContextLoader(StaticLoader(t, "https://baseopt/ctx", "as.jsonld")),
+			),
+			in:  jsontext.Value(`{"@context":"ctx","name":"v"}`),
+			out: jsontext.Value(`[{"https://www.w3.org/ns/activitystreams#name":[{"@value":"v"}]}]`),
+		},
+		{
+			name: "WithExpandContext uses document URL as base IRI",
+			proc: ld.NewProcessor(ld.WithExpandContext(
+				jsontext.Value(`{"p":"https://ex/p"}`),
+			)),
+			url: "https://doc/d",
+			in:  jsontext.Value(`{"@id":"rel","p":"v"}`),
+			out: jsontext.Value(
+				`[{"@id":"https://doc/rel","https://ex/p":[{"@value":"v"}]}]`,
+			),
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			nodes, err := tc.proc.Expand(t.Context(), bytes.NewBuffer(tc.in), "")
+			nodes, err := tc.proc.Expand(t.Context(), bytes.NewBuffer(tc.in), tc.url)
 
 			if !errors.Is(tc.err, err) {
 				t.Fatalf("expected error: %v, got: %v", tc.err, err)

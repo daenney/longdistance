@@ -188,13 +188,9 @@ func (p *Processor) context(
 	opts ctxProcessingOpts,
 ) (*Context, error) {
 	if activeCtx == nil {
-		activeCtx = newContext(baseURL)
+		// §4.1.1, paragraph 5
+		activeCtx = newContext(cmp.Or(p.baseIRI, baseURL))
 	}
-
-	activeCtx.currentBaseIRI = cmp.Or(
-		p.baseIRI,
-		activeCtx.currentBaseIRI,
-	)
 
 	// 1)
 	var result *Context
