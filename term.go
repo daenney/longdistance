@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json/jsontext"
+	"errors"
 	"log/slog"
 	"slices"
 	"strings"
@@ -114,6 +115,9 @@ type createTermOptions struct {
 	remotes   []string
 	protected bool
 	override  bool
+
+	// standalone is only set by [Processor.CacheableContext]
+	standalone bool
 }
 
 func (p *Processor) createTerm(
@@ -347,7 +351,7 @@ func (p *Processor) createTerm(
 		// 15.1)
 		if !strings.HasPrefix(suffix, "//") {
 			if t, ok := localCtx[prefix]; ok {
-				if err := p.createTerm(ctx, activeCtx, localCtx, prefix, t, createTermOptions{}); err != nil {
+				if err := p.createTerm(ctx, activeCtx, localCtx, prefix, t, createTermOptions{standalone: opts.standalone}); err != nil {
 					return err
 				}
 			}
@@ -487,6 +491,7 @@ func (p *Processor) createTerm(
 		resolvOpts.override = true
 		resolvOpts.remotes = opts.remotes
 		resolvOpts.validate = false
+		resolvOpts.standalone = opts.standalone
 		ctxDec := jsontext.NewDecoder(bytes.NewBuffer(termDef.Context))
 		_, err := p.context(
 			ctx,
@@ -497,7 +502,7 @@ func (p *Processor) createTerm(
 		)
 
 		if err != nil {
-			return ErrInvalidScopedContext
+			return errors.Join(err, ErrInvalidScopedContext)
 		}
 
 		// 21.4)

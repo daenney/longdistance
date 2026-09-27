@@ -1,0 +1,9 @@
+[
+  {
+    "https://example.org#content": [
+      {
+        "@value": "Hello, world"
+      }
+    ]
+  }
+]

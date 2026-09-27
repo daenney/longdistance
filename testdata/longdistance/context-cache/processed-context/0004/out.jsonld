@@ -1,0 +1,14 @@
+[
+  {
+    "https://schema.org/description": [
+      {
+        "@value": "Just here for the cat pictures"
+      }
+    ],
+    "https://example.org#name": [
+      {
+        "@value": "Alice"
+      }
+    ]
+  }
+]

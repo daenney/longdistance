@@ -1,0 +1,9 @@
+{
+  "thing": {
+    "@id": "https://ex.test/thing",
+    "@context": {
+        "@vocab": "rel/",
+        "term": "term"
+    }
+  }
+}

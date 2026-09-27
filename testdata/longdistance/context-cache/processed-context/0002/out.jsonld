@@ -1,0 +1,14 @@
+[
+  {
+    "https://example.org#name": [
+      {
+        "@value": "Alice"
+      }
+    ],
+    "https://example.com#something": [
+      {
+        "@value": "oh yes"
+      }
+    ]
+  }
+]

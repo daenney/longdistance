@@ -1,0 +1,14 @@
+[
+  {
+    "https://example.org#content": [
+      {
+        "@value": "Hello, world"
+      }
+    ],
+    "_:number": [
+      {
+        "@value": 3
+      }
+    ]
+  }
+]

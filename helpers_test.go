@@ -23,27 +23,20 @@ const (
 	Secv1URL = "https://w3id.org/security/v1"
 )
 
-func ProcessContext(tb testing.TB, lctx jsontext.Value, iri string) *ld.Context {
+func CacheableContext(tb testing.TB, iri string, lctx jsontext.Value, opts ...ld.ProcessorOption) *ld.Context {
 	tb.Helper()
-	p := ld.NewProcessor()
-
-	ctx, err := p.Context(tb.Context(), bytes.NewBuffer(lctx), iri)
-	if err != nil {
-		tb.Fatal(err)
-	}
-
-	return ctx
+	p := ld.NewProcessor(opts...)
+	return p.CacheableContext(tb.Context(), iri, bytes.NewBuffer(lctx))
 }
 
 func StaticLoader(tb testing.TB, pair ...string) ld.RemoteContextLoaderFunc {
 	tb.Helper()
 
 	if len(pair)%2 != 0 {
-		tb.Fatal("context must be IRI <-> file pairs")
+		tb.Fatal("contexts must be IRI <-> file pairs")
 	}
 
 	docs := make(map[string]ld.Document, len(pair)/2)
-
 	for i := 0; i < len(pair); i += 2 {
 		docs[pair[i]] = ld.Document{
 			URL:     pair[i],
@@ -51,12 +44,12 @@ func StaticLoader(tb testing.TB, pair ...string) ld.RemoteContextLoaderFunc {
 		}
 	}
 
-	return func(ctx context.Context, s string) (ld.Document, error) {
+	return func(_ context.Context, s string) (ld.Document, error) {
 		if doc, ok := docs[s]; ok {
 			return doc, nil
 		}
 
-		tb.Fatal("unknown remote context")
+		tb.Fatalf("no context for %s", s)
 		return ld.Document{}, nil
 	}
 }

@@ -1,0 +1,8 @@
+{
+  "@context": [
+    "https://example.test/remote",
+    {
+      "name": "https://example.test/vocab#name"
+    }
+  ]
+}

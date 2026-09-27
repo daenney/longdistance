@@ -1,0 +1,9 @@
+{
+  "@context": [
+    "https://example.test/remote",
+    {
+      "term": "ex:term"
+    }
+  ],
+  "term": false
+}

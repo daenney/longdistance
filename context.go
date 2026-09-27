@@ -34,6 +34,13 @@ type Context struct {
 	defaultDirection string
 	previousCtx      *Context
 	inverse          *lazyInverse
+
+	// set tracks if @vocab, @language or @direction were set so we can
+	// propagate their values when merging contexts.
+	set twiddle.Field[ctxFlag]
+
+	// processing mode affects the cache key
+	ld10 bool
 }
 
 type lazyInverse struct {
@@ -114,11 +121,12 @@ func (c *Context) clone() *Context {
 		defaultDirection: c.defaultDirection,
 		previousCtx:      c.previousCtx,
 		inverse:          nil,
+		set:              c.set,
+		ld10:             c.ld10,
 	}
 }
 
-// isBlank returns if the context is in a state where we can swap it out with
-// the context from [WithProcessedContext].
+// isBlank returns if the context does not yet hold any state.
 func (c *Context) isBlank() bool {
 	if c == nil {
 		return true
@@ -166,11 +174,161 @@ func (p *Processor) Context(
 	return res, err
 }
 
+// CacheableContext processes rawCtx into a [Context] that can be cached and
+// reused independently of the document that references it.
+//
+// Call this on a separate [Processor] created exclusively for building cache entries,
+// using the following arguments:
+//   - documentURL is the absolute URL the context was retrieved from, after
+//     following any redirects.
+//   - rawCtx is the value of the @context, and must be a JSON object.
+//
+// The processing mode affects the context cache key. The cached context must have
+// been produced by a processor using the same processing mode for it to be used.
+//
+// This function will panic if the provided context is not cacheable:
+//   - Processing the context fails for any reason.
+//   - @propagate is present and set to false.
+//   - @vocab is present and did not resolve to an absolute IRI or a blank node
+//     identifier.
+//   - The resulting context defines no terms.
+//   - A type- or property-scoped context is present that violates one of these
+//     constraints, or is null.
+func (p *Processor) CacheableContext(
+	ctx context.Context,
+	documentURL string,
+	rawCtx io.Reader,
+) *Context {
+	dec := jsontext.NewDecoder(rawCtx)
+
+	if dec.PeekKind() != jsontext.KindBeginObject {
+		panic("context is not a context definition")
+	}
+
+	opts := newCtxProcessingOpts()
+	// ensure @base is ignored by seeding remotes.
+	opts.remotes = []string{documentURL}
+	opts.standalone = true
+
+	res, err := p.context(ctx, newContext(""), dec, documentURL, opts)
+	if err != nil {
+		panic(err)
+	}
+
+	if _, derr := dec.ReadToken(); !errors.Is(derr, io.EOF) {
+		panic(errors.Join(derr, fmt.Errorf("trailing garbage in JSON")))
+	}
+
+	if res == nil || len(res.defs) == 0 {
+		panic("context defines no terms")
+	}
+
+	// check for @propagate
+	if res.previousCtx != nil {
+		panic("@propagate is set to false")
+	}
+
+	res.ld10 = p.modeLD10
+	return res
+}
+
+// merge copies terms from a cached context into the current context
+func (c *Context) merge(entry *Context, override bool) error {
+	if len(c.defs) == 0 {
+		// Nothing has been defined yet, a simple copy will do.
+		c.defs = maps.Clone(entry.defs)
+		c.prefixes = maps.Clone(entry.prefixes)
+		c.protected = maps.Clone(entry.protected)
+	} else {
+		hasProtected := len(c.protected) != 0
+		checkProtected := hasProtected && !override
+
+		if checkProtected {
+			for term := range c.protected {
+				// §4.2.2 27)
+				if def, ok := entry.defs[term]; ok &&
+					!c.defs[term].equalWithoutProtected(def) {
+					return ErrProtectedTermRedefinition
+				}
+			}
+		}
+
+		keepOld := func(term string) bool {
+			if !checkProtected {
+				return false
+			}
+
+			_, ok := c.protected[term]
+			return ok
+		}
+
+		// Copy the smaller map into the bigger one to avoid map resizes
+		// as much as possible.
+		if len(entry.defs) <= len(c.defs) {
+			for term, def := range entry.defs {
+				if keepOld(term) {
+					continue
+				}
+
+				delete(c.prefixes, term)
+				delete(c.protected, term)
+
+				c.define(term, def)
+				if def.Protected {
+					c.protected[term] = struct{}{}
+				}
+			}
+		} else {
+			defs := maps.Clone(entry.defs)
+			prefixes := maps.Clone(entry.prefixes)
+			protected := maps.Clone(entry.protected)
+
+			for term, old := range c.defs {
+				if _, ok := entry.defs[term]; ok && !keepOld(term) {
+					continue
+				}
+
+				defs[term] = old
+				if old.Prefix {
+					prefixes[term] = struct{}{}
+				}
+				if old.Protected {
+					protected[term] = struct{}{}
+				}
+			}
+
+			c.defs = defs
+			c.prefixes = prefixes
+			c.protected = protected
+		}
+	}
+
+	if entry.set.Any(ctxVocab) {
+		c.vocabMapping = entry.vocabMapping
+		c.set.Set(ctxVocab)
+	}
+
+	if entry.set.Any(ctxLang) {
+		c.defaultLang = entry.defaultLang
+		c.set.Set(ctxLang)
+	}
+
+	if entry.set.Any(ctxDir) {
+		c.defaultDirection = entry.defaultDirection
+		c.set.Set(ctxDir)
+	}
+
+	return nil
+}
+
 type ctxProcessingOpts struct {
 	remotes   []string
 	override  bool
 	propagate bool
 	validate  bool
+
+	// standalone is only set by [Processor.CacheableContext]
+	standalone bool
 }
 
 func newCtxProcessingOpts() ctxProcessingOpts {
@@ -267,7 +425,8 @@ func (p *Processor) context(
 
 			// 5.8)
 			if ctxObj.flags.Any(ctxVocab, ctxNullVocab) {
-				if err := p.handleVocab(ctx, result, ctxObj.Vocab, ctxObj.flags.Any(ctxNullVocab)); err != nil {
+				if err := p.handleVocab(ctx, result, ctxObj.Vocab,
+					ctxObj.flags.Any(ctxNullVocab), opts.standalone); err != nil {
 					return nil, err
 				}
 			}
@@ -308,10 +467,11 @@ func (p *Processor) context(
 
 			// 5.13)
 			newOpts := createTermOptions{
-				baseURL:   baseURL,
-				remotes:   opts.remotes,
-				protected: protected,
-				override:  opts.override,
+				baseURL:    baseURL,
+				remotes:    opts.remotes,
+				protected:  protected,
+				override:   opts.override,
+				standalone: opts.standalone,
 			}
 
 			for k, v := range ctxObj.Terms {
@@ -332,6 +492,10 @@ func (p *Processor) context(
 				return nil, errors.Join(err, ErrInvalidLocalContext)
 			}
 
+			if opts.standalone {
+				return nil, fmt.Errorf("@context is nullified")
+			}
+
 			// 5.1)
 			if !opts.override && len(result.protected) != 0 {
 				return nil, ErrInvalidContextNullificaton
@@ -342,7 +506,6 @@ func (p *Processor) context(
 			if !opts.propagate {
 				result.previousCtx = previous
 			}
-
 		case jsontext.KindString:
 			tok, err := rawCtx.ReadToken()
 			if err != nil {
@@ -377,21 +540,11 @@ func (p *Processor) context(
 			// This avoids cloning opts.remotes everywhere else
 			opts.remotes = append(slices.Clip(opts.remotes), iri)
 
-			cached := false
-			if result.isBlank() {
-				if pctx, ok := p.processedContext[iri]; ok {
-					curIRI := result.currentBaseIRI
-					origIRI := result.originalBaseIRI
-
-					result = pctx.clone()
-					result.currentBaseIRI = curIRI
-					result.originalBaseIRI = origIRI
-
-					cached = true
+			if entry, ok := p.processedContext[ctxCacheKey{iri, p.modeLD10}]; ok {
+				if err := result.merge(entry, opts.override); err != nil {
+					return nil, err
 				}
-			}
-
-			if !cached {
+			} else {
 				// 5.2.4) 5.2.5)
 				doc, err := p.retrieveRemoteContext(ctx, iri)
 				if err != nil {
@@ -402,6 +555,7 @@ func (p *Processor) context(
 				newOpts := newCtxProcessingOpts()
 				newOpts.remotes = opts.remotes
 				newOpts.validate = opts.validate
+				newOpts.standalone = opts.standalone
 				// https://github.com/w3c/json-ld-api/issues/708
 				newOpts.override = opts.override
 				remoteDec := jsontext.NewDecoder(bytes.NewBuffer(doc.Context))
@@ -790,6 +944,8 @@ func (p *Processor) handlePropagate(isNull bool) error {
 }
 
 func (p *Processor) handleDirection(result *Context, dir string, isNull bool) error {
+	result.set.Set(ctxDir)
+
 	if isNull {
 		result.defaultDirection = ""
 		return nil
@@ -806,6 +962,8 @@ func (p *Processor) handleDirection(result *Context, dir string, isNull bool) er
 }
 
 func (p *Processor) handleLanguage(result *Context, lang string, isNull bool) error {
+	result.set.Set(ctxLang)
+
 	if isNull {
 		result.defaultLang = ""
 		return nil
@@ -815,7 +973,14 @@ func (p *Processor) handleLanguage(result *Context, lang string, isNull bool) er
 	return nil
 }
 
-func (p *Processor) handleVocab(ctx context.Context, result *Context, vocab string, isNull bool) error {
+func (p *Processor) handleVocab(
+	ctx context.Context,
+	result *Context,
+	vocab string,
+	isNull, standalone bool,
+) error {
+	result.set.Set(ctxVocab)
+
 	// 5.8.2)
 	if isNull {
 		result.vocabMapping = ""
@@ -830,6 +995,11 @@ func (p *Processor) handleVocab(ctx context.Context, result *Context, vocab stri
 	u, err := p.expandIRI(ctx, result, vocab, true, true, nil)
 	if err != nil {
 		return err
+	}
+
+	// @vocab must not be relative when building a cacheable context
+	if standalone && !iri.IsAbsolute(u) && !isBlankNode(u) {
+		return fmt.Errorf("@vocab %q is not absolute", u)
 	}
 
 	result.vocabMapping = u

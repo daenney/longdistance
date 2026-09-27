@@ -1,0 +1,5 @@
+{
+  "@context": "https://example.test/remote",
+  "content": "Hello, world",
+  "number": 3
+}

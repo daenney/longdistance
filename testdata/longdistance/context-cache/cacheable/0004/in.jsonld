@@ -1,0 +1,6 @@
+{
+  "thing": {
+    "@id": "https://ex.test/thing",
+    "@context": null
+  }
+}

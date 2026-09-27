@@ -1,0 +1,11 @@
+{
+  "@context": [
+    {
+      "name": "https://schema.org/name",
+      "summary": "https://schema.org/description"
+    },
+    "https://example.test/remote"
+  ],
+  "name": "Alice",
+  "summary": "Just here for the cat pictures"
+}

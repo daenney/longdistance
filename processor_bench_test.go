@@ -55,6 +55,33 @@ func BenchmarkContextProcessing(b *testing.B) {
 			}
 		}
 	})
+
+	b.Run("context=SecV1+AS", func(b *testing.B) {
+		ctx := jsonutil.MakeArray(bytes.Join([][]byte{
+			jsonutil.MakeString(Secv1URL),
+			jsonutil.MakeString(ASURL),
+		},
+			[]byte(`,`)))
+
+		b.ReportAllocs()
+		b.SetBytes(int64(len(LoadData(b, "as.jsonld")) + len(LoadData(b, "securityv1.jsonld"))))
+
+		p := ld.NewProcessor(
+			ld.WithRemoteContextLoader(
+				StaticLoader(b,
+					ASURL, "as.jsonld",
+					Secv1URL, "securityv1.jsonld",
+				),
+			),
+		)
+
+		for b.Loop() {
+			_, err := p.Context(b.Context(), bytes.NewBuffer(ctx), "")
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
 func BenchmarkContextProcessingCached(b *testing.B) {
@@ -65,7 +92,7 @@ func BenchmarkContextProcessingCached(b *testing.B) {
 		b.SetBytes(int64(len(LoadData(b, "as.jsonld"))))
 
 		p := ld.NewProcessor(
-			ld.WithProcessedContext(ASURL, ProcessContext(b, LoadData(b, "as.jsonld"), ASURL)),
+			ld.WithProcessedContext(ASURL, CacheableContext(b, ASURL, LoadData(b, "as.jsonld"))),
 		)
 
 		for b.Loop() {
@@ -87,12 +114,31 @@ func BenchmarkContextProcessingCached(b *testing.B) {
 		b.SetBytes(int64(len(LoadData(b, "as.jsonld")) + len(LoadData(b, "securityv1.jsonld"))))
 
 		p := ld.NewProcessor(
-			ld.WithProcessedContext(ASURL, ProcessContext(b, LoadData(b, "as.jsonld"), ASURL)),
-			ld.WithRemoteContextLoader(
-				StaticLoader(b,
-					Secv1URL, "securityv1.jsonld",
-				),
-			),
+			ld.WithProcessedContext(ASURL, CacheableContext(b, ASURL, LoadData(b, "as.jsonld"))),
+			ld.WithProcessedContext(Secv1URL, CacheableContext(b, Secv1URL, LoadData(b, "securityv1.jsonld"))),
+		)
+
+		for b.Loop() {
+			_, err := p.Context(b.Context(), bytes.NewBuffer(ctx), "")
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("context=SecV1+AS", func(b *testing.B) {
+		ctx := jsonutil.MakeArray(bytes.Join([][]byte{
+			jsonutil.MakeString(Secv1URL),
+			jsonutil.MakeString(ASURL),
+		},
+			[]byte(`,`)))
+
+		b.ReportAllocs()
+		b.SetBytes(int64(len(LoadData(b, "as.jsonld")) + len(LoadData(b, "securityv1.jsonld"))))
+
+		p := ld.NewProcessor(
+			ld.WithProcessedContext(ASURL, CacheableContext(b, ASURL, LoadData(b, "as.jsonld"))),
+			ld.WithProcessedContext(Secv1URL, CacheableContext(b, Secv1URL, LoadData(b, "securityv1.jsonld"))),
 		)
 
 		for b.Loop() {
@@ -196,7 +242,7 @@ func BenchmarkCompactCached(b *testing.B) {
 
 		{
 			p := ld.NewProcessor(
-				ld.WithProcessedContext(ASURL, ProcessContext(b, LoadData(b, "as.jsonld"), ASURL)),
+				ld.WithProcessedContext(ASURL, CacheableContext(b, ASURL, LoadData(b, "as.jsonld"))),
 			)
 
 			var err error
@@ -214,7 +260,7 @@ func BenchmarkCompactCached(b *testing.B) {
 		b.SetBytes(int64(dst.Len()))
 
 		p := ld.NewProcessor(
-			ld.WithProcessedContext(ASURL, ProcessContext(b, LoadData(b, "as.jsonld"), ASURL)),
+			ld.WithProcessedContext(ASURL, CacheableContext(b, ASURL, LoadData(b, "as.jsonld"))),
 		)
 
 		for b.Loop() {
@@ -233,16 +279,12 @@ func BenchmarkCompactCached(b *testing.B) {
 		{
 
 			p := ld.NewProcessor(
-				ld.WithProcessedContext(ASURL, ProcessContext(b, LoadData(b, "as.jsonld"), ASURL)),
-				ld.WithRemoteContextLoader(
-					StaticLoader(b,
-						Secv1URL, "securityv1.jsonld",
-					),
-				),
+				ld.WithProcessedContext(ASURL, CacheableContext(b, ASURL, LoadData(b, "as.jsonld"))),
+				ld.WithProcessedContext(Secv1URL, CacheableContext(b, Secv1URL, LoadData(b, "securityv1.jsonld"))),
 			)
 
 			var err error
-			exp, err = p.Expand(b.Context(), bytes.NewBuffer(LoadData(b, "observatory/create-note/in.jsonld")), "")
+			exp, err = p.Expand(b.Context(), bytes.NewBuffer(LoadData(b, "observatory/update-person/in.jsonld")), "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -256,12 +298,8 @@ func BenchmarkCompactCached(b *testing.B) {
 		b.SetBytes(int64(dst.Len()))
 
 		p := ld.NewProcessor(
-			ld.WithProcessedContext(ASURL, ProcessContext(b, LoadData(b, "as.jsonld"), ASURL)),
-			ld.WithRemoteContextLoader(
-				StaticLoader(b,
-					Secv1URL, "securityv1.jsonld",
-				),
-			),
+			ld.WithProcessedContext(ASURL, CacheableContext(b, ASURL, LoadData(b, "as.jsonld"))),
+			ld.WithProcessedContext(Secv1URL, CacheableContext(b, Secv1URL, LoadData(b, "securityv1.jsonld"))),
 		)
 
 		for b.Loop() {
@@ -324,7 +362,7 @@ func BenchmarkExpandCached(b *testing.B) {
 		b.SetBytes(int64(len(doc)))
 
 		p := ld.NewProcessor(
-			ld.WithProcessedContext(ASURL, ProcessContext(b, LoadData(b, "as.jsonld"), ASURL)),
+			ld.WithProcessedContext(ASURL, CacheableContext(b, ASURL, LoadData(b, "as.jsonld"))),
 		)
 
 		for b.Loop() {
@@ -342,12 +380,8 @@ func BenchmarkExpandCached(b *testing.B) {
 		b.SetBytes(int64(len(doc)))
 
 		p := ld.NewProcessor(
-			ld.WithProcessedContext(ASURL, ProcessContext(b, LoadData(b, "as.jsonld"), ASURL)),
-			ld.WithRemoteContextLoader(
-				StaticLoader(b,
-					Secv1URL, "securityv1.jsonld",
-				),
-			),
+			ld.WithProcessedContext(ASURL, CacheableContext(b, ASURL, LoadData(b, "as.jsonld"))),
+			ld.WithProcessedContext(Secv1URL, CacheableContext(b, Secv1URL, LoadData(b, "securityv1.jsonld"))),
 		)
 
 		for b.Loop() {

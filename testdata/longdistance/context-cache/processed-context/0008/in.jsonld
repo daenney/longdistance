@@ -1,0 +1,6 @@
+{
+  "@context": [
+    "https://example.test/remote",
+    "https://example.test/remote2"
+  ]
+}

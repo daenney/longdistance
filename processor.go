@@ -27,7 +27,7 @@ type Processor struct {
 	excludeIRIsFromCompaction []string
 	remapPrefixIRIs           map[string]string
 	validateContextFunc       ValidateContextFunc
-	processedContext          map[string]*Context
+	processedContext          map[ctxCacheKey]*Context
 
 	disallowedKeys map[string]struct{}
 }
@@ -54,10 +54,6 @@ func NewProcessor(options ...ProcessorOption) *Processor {
 
 	for _, opt := range options {
 		opt(p)
-	}
-
-	if p.expandContext != nil {
-		p.processedContext = nil
 	}
 
 	return p
@@ -187,21 +183,29 @@ func WithValidateContext(f ValidateContextFunc) ProcessorOption {
 
 // WithProcessedContext stores the processed context for an IRI.
 //
-// It's used to initiate the context if and only if:
-//   - No terms have been defined on the context yet.
-//   - The first, or only, entry in the document's @context is a remote context.
+// Terms from a processed context are copied into the active context when the
+// remote context IRI is encountered during context processing. This can be used
+// to amortise the cost of context processing when handling documents that reference
+// well-known remote contexts.
 //
-// This can be used to amortise the cost of the initial context processing when
-// handling documents that all share a well-known remote context. Any additional
-// contexts will be processed normally.
-//
-// This has no benefit if [WithExpandContext] is used, as in that case terms are
-// already defined on the context before any remote contexts are retrieved.
+// The passed context must have been produced by [Processor.CacheableContext], as
+// it checks if the resulting context can be safely cached. The result of [Processor.Context]
+// is not safe for caching. A nil context is ignored.
 func WithProcessedContext(iri string, ctx *Context) ProcessorOption {
 	return func(p *Processor) {
-		if p.processedContext == nil {
-			p.processedContext = make(map[string]*Context, 2)
+		if ctx == nil {
+			return
 		}
-		p.processedContext[iri] = ctx
+
+		if p.processedContext == nil {
+			p.processedContext = make(map[ctxCacheKey]*Context, 2)
+		}
+
+		p.processedContext[ctxCacheKey{iri, ctx.ld10}] = ctx
 	}
+}
+
+type ctxCacheKey struct {
+	iri  string
+	ld10 bool
 }
