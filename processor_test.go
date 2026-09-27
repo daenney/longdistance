@@ -6,7 +6,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	ld "sourcery.dny.nu/longdistance"
 )
 
@@ -42,9 +41,7 @@ func TestExcludeIRIsFromCompaction(t *testing.T) {
 
 	want := jsontext.Value(`{"@context":{"as": "https://www.w3.org/ns/activitystreams#"},"@id": "https://example.com", "@type": "as:Create", "as:to": {"@id": "https://www.w3.org/ns/activitystreams#Public"}}`)
 
-	if diff := cmp.Diff(want, jsontext.Value(dst.Bytes()), JSONDiff()); diff != "" {
-		t.Errorf("compaction mismatch (-want +got):\n%s", diff)
-	}
+	DiffCompacted(t, want, dst.Bytes())
 }
 
 func TestRemapPrefixIRIs(t *testing.T) {

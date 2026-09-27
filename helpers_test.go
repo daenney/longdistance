@@ -130,6 +130,36 @@ func JSONDiff() cmp.Option {
 	}
 }
 
+func DiffExpanded(tb testing.TB, want jsontext.Value, nodes []ld.Node) {
+	tb.Helper()
+
+	got, err := json.Marshal(nodes)
+	if err != nil {
+		tb.Fatalf("failed to marshal to expanded JSON: %s", err)
+	}
+
+	if diff := cmp.Diff(want, jsontext.Value(got), JSONDiff()); diff != "" {
+		if *dump {
+			data, _ := json.Marshal(nodes, jsontext.WithIndent("    "))
+			tb.Logf("expanded form: %s", string(data))
+		}
+		tb.Errorf("expansion mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func DiffCompacted(tb testing.TB, want jsontext.Value, got []byte) {
+	tb.Helper()
+
+	if diff := cmp.Diff(want, jsontext.Value(got), JSONDiff()); diff != "" {
+		if *dump {
+			data := jsontext.Value(got)
+			_ = data.Indent(jsontext.WithIndent("    "))
+			tb.Logf("compacted form: %s", string(data))
+		}
+		tb.Errorf("compaction mismatch (-want +got):\n%s", diff)
+	}
+}
+
 // jsonLDEqual compares two JSON values using JSON-LD comparison semantics.
 func jsonLDEqual(x, y any) bool {
 	switch xv := x.(type) {

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	ld "sourcery.dny.nu/longdistance"
 )
 
@@ -329,14 +328,7 @@ func TestCompact(t *testing.T) {
 						t.Fatalf("expected error: %s, got: %s", tc.err, err)
 					}
 				} else {
-					got := dst.Bytes()
-					if diff := cmp.Diff(want, jsontext.Value(got), JSONDiff()); diff != "" {
-						if *dump {
-							data, _ := json.Marshal(got, jsontext.WithIndent("    "))
-							t.Logf("compacted from: %s", string(data))
-						}
-						t.Errorf("compaction mismatch (-want +got):\n%s", diff)
-					}
+					DiffCompacted(t, want, dst.Bytes())
 				}
 			})
 
@@ -375,14 +367,7 @@ func TestCompact(t *testing.T) {
 						t.Fatalf("expected error: %s, got: %s", tc.err, err)
 					}
 				} else {
-					got := dst.Bytes()
-					if diff := cmp.Diff(want, jsontext.Value(got), JSONDiff()); diff != "" {
-						if *dump {
-							data, _ := json.Marshal(got, jsontext.WithIndent("    "))
-							t.Logf("compacted from: %s", string(data))
-						}
-						t.Errorf("compaction mismatch (-want +got):\n%s", diff)
-					}
+					DiffCompacted(t, want, dst.Bytes())
 				}
 			})
 		})

@@ -3,14 +3,12 @@ package longdistance_test
 import (
 	"bytes"
 	"encoding/json/jsontext"
-	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	ld "sourcery.dny.nu/longdistance"
 )
 
@@ -464,17 +462,7 @@ func TestExpand(t *testing.T) {
 						t.Fatalf("expected error: %s, got: %s", tc.err, err)
 					}
 				} else {
-					got, err := json.Marshal(expanded)
-					if err != nil {
-						t.Fatalf("failed to marshal to expanded JSON: %s", err)
-					}
-					if diff := cmp.Diff(want, jsontext.Value(got), JSONDiff()); diff != "" {
-						if *dump {
-							data, _ := json.Marshal(expanded, jsontext.WithIndent("    "))
-							t.Logf("expanded from: %s", string(data))
-						}
-						t.Errorf("expansion mismatch (-want +got):\n%s", diff)
-					}
+					DiffExpanded(t, want, expanded)
 				}
 			})
 
@@ -513,17 +501,7 @@ func TestExpand(t *testing.T) {
 						t.Fatalf("expected error: %s, got: %s", tc.err, err)
 					}
 				} else {
-					got, err := json.Marshal(expanded)
-					if err != nil {
-						t.Fatalf("failed to marshal to expanded JSON: %s", err)
-					}
-					if diff := cmp.Diff(want, jsontext.Value(got), JSONDiff()); diff != "" {
-						if *dump {
-							data, _ := json.Marshal(expanded, jsontext.WithIndent("    "))
-							t.Logf("expanded from: %s", string(data))
-						}
-						t.Errorf("expansion mismatch (-want +got):\n%s", diff)
-					}
+					DiffExpanded(t, want, expanded)
 				}
 			})
 		})
@@ -659,17 +637,7 @@ func TestExpandCustom(t *testing.T) {
 			}
 
 			if tc.err == nil {
-				got, err := json.Marshal(nodes)
-				if err != nil {
-					t.Fatalf("failed to marshal to expanded JSON: %s", err)
-				}
-				if diff := cmp.Diff(tc.out, jsontext.Value(got), JSONDiff()); diff != "" {
-					if *dump {
-						data, _ := json.Marshal(nodes, jsontext.WithIndent("    "))
-						t.Logf("expanded from: %s", string(data))
-					}
-					t.Errorf("expansion mismatch (-want +got):\n%s", diff)
-				}
+				DiffExpanded(t, tc.out, nodes)
 			}
 		})
 	}
