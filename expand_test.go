@@ -632,7 +632,7 @@ func TestExpandCustom(t *testing.T) {
 
 			nodes, err := tc.proc.Expand(t.Context(), bytes.NewBuffer(tc.in), tc.url)
 
-			if !errors.Is(tc.err, err) {
+			if !errors.Is(err, tc.err) {
 				t.Fatalf("expected error: %v, got: %v", tc.err, err)
 			}
 
