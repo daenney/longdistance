@@ -15,7 +15,7 @@ func BenchmarkContextProcessing(b *testing.B) {
 		ctx := jsontext.Value(jsonutil.MakeString(ASURL))
 
 		b.ReportAllocs()
-		b.SetBytes(int64(len(ctx)))
+		b.SetBytes(int64(len(LoadData(b, "as.jsonld"))))
 
 		p := ld.NewProcessor(
 			ld.WithRemoteContextLoader(StaticLoader(b, ASURL, "as.jsonld")),
@@ -37,7 +37,7 @@ func BenchmarkContextProcessing(b *testing.B) {
 			[]byte(`,`)))
 
 		b.ReportAllocs()
-		b.SetBytes(int64(len(ctx)))
+		b.SetBytes(int64(len(LoadData(b, "as.jsonld")) + len(LoadData(b, "securityv1.jsonld"))))
 
 		p := ld.NewProcessor(
 			ld.WithRemoteContextLoader(
@@ -62,7 +62,7 @@ func BenchmarkContextProcessingCached(b *testing.B) {
 		ctx := jsontext.Value(jsonutil.MakeString(ASURL))
 
 		b.ReportAllocs()
-		b.SetBytes(int64(len(ctx)))
+		b.SetBytes(int64(len(LoadData(b, "as.jsonld"))))
 
 		p := ld.NewProcessor(
 			ld.WithProcessedContext(ASURL, ProcessContext(b, LoadData(b, "as.jsonld"), ASURL)),
@@ -84,7 +84,7 @@ func BenchmarkContextProcessingCached(b *testing.B) {
 			[]byte(`,`)))
 
 		b.ReportAllocs()
-		b.SetBytes(int64(len(ctx)))
+		b.SetBytes(int64(len(LoadData(b, "as.jsonld")) + len(LoadData(b, "securityv1.jsonld"))))
 
 		p := ld.NewProcessor(
 			ld.WithProcessedContext(ASURL, ProcessContext(b, LoadData(b, "as.jsonld"), ASURL)),
