@@ -34,27 +34,6 @@ type Node struct {
 	Properties Properties // everything else
 }
 
-// Internal is a generic type that matches the internals of [Node].
-//
-// This can be used to convert to a [Node] from any type outside this package
-// that happens to be a [Node] underneath.
-type Internal interface {
-	~struct {
-		Direction  string
-		Graph      []Node
-		ID         string
-		Included   []Node
-		Index      string
-		Language   string
-		List       []Node
-		Reverse    Properties
-		Set        []Node
-		Type       []string
-		Value      jsontext.Value
-		Properties Properties
-	}
-}
-
 // PropertySet returns a [Set] with an entry for each property that is set on
 // the [Node].
 func (n *Node) PropertySet() map[string]struct{} {
