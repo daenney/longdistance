@@ -21,6 +21,7 @@ import (
 type expandOptions struct {
 	frameExpansion bool
 	fromMap        bool
+	owned          bool // owned is set when the decoder reads from a buffer we own
 }
 
 func (e expandOptions) withoutFromMap() expandOptions {
@@ -241,7 +242,9 @@ func (p *Processor) expandArray(
 			}
 
 			if activeProp != "" && activeProp != KeywordGraph {
-				value = value.Clone()
+				if !opts.owned {
+					value = value.Clone()
+				}
 				ldCtx := activeCtx
 
 				if termDef.Context != nil {
@@ -310,6 +313,8 @@ func (p *Processor) expandRaw(
 	dec := jsonutil.NewDecoder(value)
 	defer dec.Release()
 
+	opts.owned = true
+
 	return p.expand(ctx, activeCtx, activeProp, &dec.Decoder, baseURL, opts)
 }
 
@@ -349,7 +354,11 @@ func (p *Processor) expandObject(
 			return nil, err
 		}
 
-		obj[key] = value.Clone()
+		if !opts.owned {
+			value = value.Clone()
+		}
+
+		obj[key] = value
 	}
 
 	if _, err := dec.ReadToken(); err != nil {
