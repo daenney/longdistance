@@ -113,7 +113,7 @@ func ReadObject(in jsontext.Value) (Object, error) {
 		return nil, fmt.Errorf("unexpected token")
 	}
 
-	dec := NewDecoder(in)
+	dec := NewDecoder(in, false)
 	defer dec.Release()
 
 	if _, err := dec.ReadToken(); err != nil { // consume '{'
@@ -144,7 +144,7 @@ func ReadStringSlice(in jsontext.Value) ([]string, error) {
 		return nil, nil
 	}
 
-	dec := NewDecoder(in)
+	dec := NewDecoder(in, false)
 	defer dec.Release()
 
 	res, _, err := DecodeStringSlice(&dec.Decoder)
@@ -157,7 +157,7 @@ func ReadValueSlice(in jsontext.Value) ([]jsontext.Value, error) {
 		return nil, nil
 	}
 
-	dec := NewDecoder(in)
+	dec := NewDecoder(in, false)
 	defer dec.Release()
 
 	switch dec.PeekKind() {

@@ -54,7 +54,7 @@ func (p *Processor) Expand(
 			}
 		}
 
-		res, err := p.contextValue(ctx, ldCtx, rawctx, ldCtx.originalBaseIRI, newCtxProcessingOpts())
+		res, err := p.contextValue(ctx, ldCtx, rawctx, ldCtx.originalBaseIRI, newCtxProcessingOpts(), false)
 		if err != nil {
 			return nil, err
 		}
@@ -162,7 +162,7 @@ func (p *Processor) expand(
 		}
 
 		if propContext != nil {
-			nctx, err := p.contextValue(ctx, activeCtx, propContext, termDef.BaseIRI, newCtxProcessingOpts())
+			nctx, err := p.contextValue(ctx, activeCtx, propContext, termDef.BaseIRI, newCtxProcessingOpts(), true)
 			if err != nil {
 				return nil, err
 			}
@@ -248,7 +248,7 @@ func (p *Processor) expandArray(
 				ldCtx := activeCtx
 
 				if termDef.Context != nil {
-					ldCtx, err = p.contextValue(ctx, ldCtx, termDef.Context, termDef.BaseIRI, newCtxProcessingOpts())
+					ldCtx, err = p.contextValue(ctx, ldCtx, termDef.Context, termDef.BaseIRI, newCtxProcessingOpts(), true)
 					if err != nil {
 						return nil, err
 					}
@@ -310,7 +310,7 @@ func (p *Processor) expandRaw(
 		return nil, nil
 	}
 
-	dec := jsonutil.NewDecoder(value)
+	dec := jsonutil.NewDecoder(value, true)
 	defer dec.Release()
 
 	opts.owned = true
@@ -378,7 +378,7 @@ func (p *Processor) expandObject(
 	if propContext != nil {
 		ropts := newCtxProcessingOpts()
 		ropts.override = true
-		nctx, err := p.contextValue(ctx, activeCtx, propContext, termDef.BaseIRI, ropts)
+		nctx, err := p.contextValue(ctx, activeCtx, propContext, termDef.BaseIRI, ropts, true)
 		if err != nil {
 			return nil, err
 		}
@@ -388,7 +388,7 @@ func (p *Processor) expandObject(
 
 	// 9)
 	if rawCtx, ok := obj[KeywordContext]; ok {
-		nctx, err := p.contextValue(ctx, activeCtx, rawCtx, baseURL, newCtxProcessingOpts())
+		nctx, err := p.contextValue(ctx, activeCtx, rawCtx, baseURL, newCtxProcessingOpts(), true)
 		if err != nil {
 			return nil, err
 		}
@@ -425,7 +425,7 @@ func (p *Processor) expandObject(
 			ropts := newCtxProcessingOpts()
 			ropts.propagate = false
 
-			nctx, err := p.contextValue(ctx, activeCtx, tscopeDef.Context, adef.BaseIRI, ropts)
+			nctx, err := p.contextValue(ctx, activeCtx, tscopeDef.Context, adef.BaseIRI, ropts, true)
 			if err != nil {
 				return nil, err
 			}
@@ -936,6 +936,7 @@ mainLoop:
 							def.Context,
 							def.BaseIRI,
 							newCtxProcessingOpts(),
+							true,
 						)
 						if err != nil {
 							return err
@@ -1130,7 +1131,7 @@ mainLoop:
 				ropts := newCtxProcessingOpts()
 				ropts.override = true
 
-				nctx, err := p.contextValue(ctx, activeCtx, termDef.Context, termDef.BaseIRI, ropts)
+				nctx, err := p.contextValue(ctx, activeCtx, termDef.Context, termDef.BaseIRI, ropts, true)
 				if err != nil {
 					return err
 				}

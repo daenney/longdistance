@@ -343,8 +343,9 @@ func (p *Processor) contextValue(
 	rawCtx jsontext.Value,
 	baseURL string,
 	opts ctxProcessingOpts,
+	validated bool,
 ) (*Context, error) {
-	dec := jsonutil.NewDecoder(rawCtx)
+	dec := jsonutil.NewDecoder(rawCtx, validated)
 	defer dec.Release()
 
 	return p.context(ctx, activeCtx, &dec.Decoder, baseURL, opts)
@@ -576,6 +577,7 @@ func (p *Processor) context(
 					doc.Context,
 					doc.URL,
 					newOpts,
+					false,
 				)
 				if err != nil {
 					return nil, err
@@ -1071,7 +1073,7 @@ func (p *Processor) handleImport(
 		return nil, ErrInvalidRemoteContext
 	}
 
-	dec := jsonutil.NewDecoder(res.Context)
+	dec := jsonutil.NewDecoder(res.Context, false)
 	defer dec.Release()
 
 	tok, err := dec.ReadToken()

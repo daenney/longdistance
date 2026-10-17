@@ -18,11 +18,15 @@ var decoderPool = sync.Pool{
 
 // NewDecoder returns a [Decoder] from the pool reading from in.
 //
+// When true, validated disables duplicate name checking. This is safe
+// to do when the value came from a jsontext.Decoder that did enforce
+// the duplicate name checks.
+//
 // Call [Decoder.Release] to return it to the pool.
-func NewDecoder(in []byte) *Decoder {
+func NewDecoder(in []byte, validated bool) *Decoder {
 	d := decoderPool.Get().(*Decoder)
 	d.buf = *bytes.NewBuffer(in) // avoid this escaping by stashing it on the decoder
-	d.Decoder.Reset(&d.buf)
+	d.Decoder.Reset(&d.buf, jsontext.AllowDuplicateNames(validated))
 
 	return d
 }

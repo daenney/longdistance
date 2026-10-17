@@ -498,6 +498,7 @@ func (p *Processor) createTerm(
 			termDef.Context,
 			opts.baseURL,
 			resolvOpts,
+			true,
 		)
 
 		if err != nil {
