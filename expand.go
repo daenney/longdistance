@@ -1,7 +1,6 @@
 package longdistance
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"encoding/json/jsontext"
@@ -54,8 +53,7 @@ func (p *Processor) Expand(
 			}
 		}
 
-		dec := jsontext.NewDecoder(bytes.NewBuffer(rawctx))
-		res, err := p.context(ctx, ldCtx, dec, ldCtx.originalBaseIRI, newCtxProcessingOpts())
+		res, err := p.contextValue(ctx, ldCtx, rawctx, ldCtx.originalBaseIRI, newCtxProcessingOpts())
 		if err != nil {
 			return nil, err
 		}
@@ -163,8 +161,7 @@ func (p *Processor) expand(
 		}
 
 		if propContext != nil {
-			ctxDec := jsontext.NewDecoder(bytes.NewBuffer(propContext))
-			nctx, err := p.context(ctx, activeCtx, ctxDec, termDef.BaseIRI, newCtxProcessingOpts())
+			nctx, err := p.contextValue(ctx, activeCtx, propContext, termDef.BaseIRI, newCtxProcessingOpts())
 			if err != nil {
 				return nil, err
 			}
@@ -248,8 +245,7 @@ func (p *Processor) expandArray(
 				ldCtx := activeCtx
 
 				if termDef.Context != nil {
-					ctxDec := jsontext.NewDecoder(bytes.NewBuffer(termDef.Context))
-					ldCtx, err = p.context(ctx, ldCtx, ctxDec, termDef.BaseIRI, newCtxProcessingOpts())
+					ldCtx, err = p.contextValue(ctx, ldCtx, termDef.Context, termDef.BaseIRI, newCtxProcessingOpts())
 					if err != nil {
 						return nil, err
 					}
@@ -311,7 +307,10 @@ func (p *Processor) expandRaw(
 		return nil, nil
 	}
 
-	return p.expand(ctx, activeCtx, activeProp, jsontext.NewDecoder(bytes.NewBuffer(value)), baseURL, opts)
+	dec := jsonutil.NewDecoder(value)
+	defer dec.Release()
+
+	return p.expand(ctx, activeCtx, activeProp, &dec.Decoder, baseURL, opts)
 }
 
 func (p *Processor) expandObject(
@@ -370,7 +369,7 @@ func (p *Processor) expandObject(
 	if propContext != nil {
 		ropts := newCtxProcessingOpts()
 		ropts.override = true
-		nctx, err := p.context(ctx, activeCtx, jsontext.NewDecoder(bytes.NewBuffer(propContext)), termDef.BaseIRI, ropts)
+		nctx, err := p.contextValue(ctx, activeCtx, propContext, termDef.BaseIRI, ropts)
 		if err != nil {
 			return nil, err
 		}
@@ -380,7 +379,7 @@ func (p *Processor) expandObject(
 
 	// 9)
 	if rawCtx, ok := obj[KeywordContext]; ok {
-		nctx, err := p.context(ctx, activeCtx, jsontext.NewDecoder(bytes.NewBuffer(rawCtx)), baseURL, newCtxProcessingOpts())
+		nctx, err := p.contextValue(ctx, activeCtx, rawCtx, baseURL, newCtxProcessingOpts())
 		if err != nil {
 			return nil, err
 		}
@@ -417,7 +416,7 @@ func (p *Processor) expandObject(
 			ropts := newCtxProcessingOpts()
 			ropts.propagate = false
 
-			nctx, err := p.context(ctx, activeCtx, jsontext.NewDecoder(bytes.NewBuffer(tscopeDef.Context)), adef.BaseIRI, ropts)
+			nctx, err := p.contextValue(ctx, activeCtx, tscopeDef.Context, adef.BaseIRI, ropts)
 			if err != nil {
 				return nil, err
 			}
@@ -922,11 +921,10 @@ mainLoop:
 				// 13.8.3.2)
 				if slices.Contains(cnt, KeywordType) {
 					if def, ok := mapCtx.defs[idx]; ok && def.Context != nil {
-						dec := jsontext.NewDecoder(bytes.NewBuffer(def.Context))
-						nctx, err := p.context(
+						nctx, err := p.contextValue(
 							ctx,
 							mapCtx,
-							dec,
+							def.Context,
 							def.BaseIRI,
 							newCtxProcessingOpts(),
 						)
@@ -1123,7 +1121,7 @@ mainLoop:
 				ropts := newCtxProcessingOpts()
 				ropts.override = true
 
-				nctx, err := p.context(ctx, activeCtx, jsontext.NewDecoder(bytes.NewBuffer(termDef.Context)), termDef.BaseIRI, ropts)
+				nctx, err := p.contextValue(ctx, activeCtx, termDef.Context, termDef.BaseIRI, ropts)
 				if err != nil {
 					return err
 				}

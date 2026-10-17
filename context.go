@@ -1,7 +1,6 @@
 package longdistance
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"encoding/json/jsontext"
@@ -338,6 +337,19 @@ func newCtxProcessingOpts() ctxProcessingOpts {
 	}
 }
 
+func (p *Processor) contextValue(
+	ctx context.Context,
+	activeCtx *Context,
+	rawCtx jsontext.Value,
+	baseURL string,
+	opts ctxProcessingOpts,
+) (*Context, error) {
+	dec := jsonutil.NewDecoder(rawCtx)
+	defer dec.Release()
+
+	return p.context(ctx, activeCtx, &dec.Decoder, baseURL, opts)
+}
+
 func (p *Processor) context(
 	ctx context.Context,
 	activeCtx *Context,
@@ -558,11 +570,10 @@ func (p *Processor) context(
 				newOpts.standalone = opts.standalone
 				// https://github.com/w3c/json-ld-api/issues/708
 				newOpts.override = opts.override
-				remoteDec := jsontext.NewDecoder(bytes.NewBuffer(doc.Context))
-				res, err := p.context(
+				res, err := p.contextValue(
 					ctx,
 					result,
-					remoteDec,
+					doc.Context,
 					doc.URL,
 					newOpts,
 				)
@@ -1060,7 +1071,9 @@ func (p *Processor) handleImport(
 		return nil, ErrInvalidRemoteContext
 	}
 
-	dec := jsontext.NewDecoder(bytes.NewBuffer(res.Context))
+	dec := jsonutil.NewDecoder(res.Context)
+	defer dec.Release()
+
 	tok, err := dec.ReadToken()
 	if err != nil {
 		return nil, ErrInvalidRemoteContext
@@ -1097,7 +1110,7 @@ func (p *Processor) handleImport(
 			continue
 		}
 
-		input, err := p.decodeTerm(dec)
+		input, err := p.decodeTerm(&dec.Decoder)
 		if err != nil {
 			return nil, err
 		}

@@ -492,11 +492,10 @@ func (p *Processor) createTerm(
 		resolvOpts.remotes = opts.remotes
 		resolvOpts.validate = false
 		resolvOpts.standalone = opts.standalone
-		ctxDec := jsontext.NewDecoder(bytes.NewBuffer(termDef.Context))
-		_, err := p.context(
+		_, err := p.contextValue(
 			ctx,
 			activeCtx,
-			ctxDec,
+			termDef.Context,
 			opts.baseURL,
 			resolvOpts,
 		)

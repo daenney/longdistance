@@ -1,7 +1,6 @@
 package jsonutil
 
 import (
-	"bytes"
 	"encoding/json/jsontext"
 	"errors"
 	"fmt"
@@ -114,7 +113,9 @@ func ReadObject(in jsontext.Value) (Object, error) {
 		return nil, fmt.Errorf("unexpected token")
 	}
 
-	dec := jsontext.NewDecoder(bytes.NewReader(in))
+	dec := NewDecoder(in)
+	defer dec.Release()
+
 	if _, err := dec.ReadToken(); err != nil { // consume '{'
 		return nil, err
 	}
@@ -143,9 +144,10 @@ func ReadStringSlice(in jsontext.Value) ([]string, error) {
 		return nil, nil
 	}
 
-	res, _, err := DecodeStringSlice(
-		jsontext.NewDecoder(bytes.NewBuffer(in)),
-	)
+	dec := NewDecoder(in)
+	defer dec.Release()
+
+	res, _, err := DecodeStringSlice(&dec.Decoder)
 
 	return res, err
 }
@@ -155,7 +157,9 @@ func ReadValueSlice(in jsontext.Value) ([]jsontext.Value, error) {
 		return nil, nil
 	}
 
-	dec := jsontext.NewDecoder(bytes.NewBuffer(in))
+	dec := NewDecoder(in)
+	defer dec.Release()
+
 	switch dec.PeekKind() {
 	case jsontext.KindNull:
 		return nil, nil
