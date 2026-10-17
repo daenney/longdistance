@@ -352,6 +352,24 @@ func BenchmarkExpand(b *testing.B) {
 			}
 		}
 	})
+
+	b.Run("collection=outbox", func(b *testing.B) {
+		doc := LoadData(b, "longdistance/outbox/in.jsonld")
+
+		b.ReportAllocs()
+		b.SetBytes(int64(len(doc)))
+
+		p := ld.NewProcessor(
+			ld.WithRemoteContextLoader(StaticLoader(b, ASURL, "as.jsonld")),
+		)
+
+		for b.Loop() {
+			_, err := p.Expand(b.Context(), bytes.NewBuffer(doc), "")
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
 func BenchmarkExpandCached(b *testing.B) {
@@ -382,6 +400,24 @@ func BenchmarkExpandCached(b *testing.B) {
 		p := ld.NewProcessor(
 			ld.WithProcessedContext(ASURL, CacheableContext(b, ASURL, LoadData(b, "as.jsonld"))),
 			ld.WithProcessedContext(Secv1URL, CacheableContext(b, Secv1URL, LoadData(b, "securityv1.jsonld"))),
+		)
+
+		for b.Loop() {
+			_, err := p.Expand(b.Context(), bytes.NewBuffer(doc), "")
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("collection=outbox", func(b *testing.B) {
+		doc := LoadData(b, "longdistance/outbox/in.jsonld")
+
+		b.ReportAllocs()
+		b.SetBytes(int64(len(doc)))
+
+		p := ld.NewProcessor(
+			ld.WithProcessedContext(ASURL, CacheableContext(b, ASURL, LoadData(b, "as.jsonld"))),
 		)
 
 		for b.Loop() {

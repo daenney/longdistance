@@ -275,6 +275,7 @@ func TestCompact(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("%s-%s", tc.id, tc.name), func(t *testing.T) {
+			t.Attr("earl", "http://json-ld.org/test-suite/tests/compact-manifest.jsonld#"+tc.id)
 			t.Parallel()
 
 			src := LoadData(t, tc.input)
